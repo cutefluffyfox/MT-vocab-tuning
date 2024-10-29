@@ -1,0 +1,5 @@
+yadisk~=3.1.0
+python-dotenv~=1.0.0
+
+pandas~=2.0.3
+datasets~=2.19.0
