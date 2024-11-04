@@ -17,8 +17,8 @@ class MTDataset:
         self.dm = DatasetManager()
         os.makedirs(os.path.dirname(self.dm.get_path(direction, 'DELETE_ME')), exist_ok=True)
 
-    def get_df(self) -> pd.DataFrame:
-        return pd.read_csv(self.dm.get_path(self.direction, self.csv_name))
+    def get_df(self, *args, **kwargs) -> pd.DataFrame:
+        return pd.read_csv(self.dm.get_path(self.direction, self.csv_name), *args, **kwargs)
 
     def save_df(self, df: pd.DataFrame):
         file_path = self.dm.get_path(self.direction, self.csv_name)
