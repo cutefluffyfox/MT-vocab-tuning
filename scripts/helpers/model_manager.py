@@ -70,3 +70,12 @@ class Madlad400Model(HFModel):
         # madlad support translation in form "<2xx> text"
         return [f"<2{row['dst_lang']}> {row['text']}" for row in texts]
 
+
+class NLLB200Model(HFModel):
+    def __init__(self, convert_to_float16: bool = False, device: str = 'auto'):
+        super(NLLB200Model, self).__init__(
+            'facebook/nllb-200-distilled-1.3B',
+            convert_to_float16=convert_to_float16,
+            device=device
+        )
+
