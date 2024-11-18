@@ -104,5 +104,5 @@ class NLLB200Model(HFModel):
         elif lang == 'mhr':
             raise ValueError('Language: mhr is not supported by NLLB-200')
         else:
-            raise NotImplementedError('Language not supported yet.')
+            raise NotImplementedError(f'Language `{lang}` not supported yet.')
 
