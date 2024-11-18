@@ -76,6 +76,33 @@ class NLLB200Model(HFModel):
         super(NLLB200Model, self).__init__(
             'facebook/nllb-200-distilled-1.3B',
             convert_to_float16=convert_to_float16,
-            device=device
+            device=device,
         )
+        self.dst_lang: str = None
+
+    def transform(self, texts: list[dict]) -> list[str]:
+        self.dst_lang = self.__from_iso(texts[0]['dst_lang'])
+        return [f"{row['text']}" for row in texts]
+
+    def translate(self, input_ids: dict, max_tokens: int = 100, *args, **kwargs) -> list[str]:
+        outputs = self.model.generate(
+            **input_ids,
+            max_new_tokens=max_tokens,
+            forced_bos_token_id=self.tokenizer.convert_tokens_to_ids(self.dst_lang)
+        )
+        return self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+
+    def __from_iso(self, lang: str):
+        if lang == 'en':
+            return 'eng_Latn'
+        elif lang == 'ru':
+            return 'rus_Cyrl'
+        elif lang == 'tat':
+            return 'tat_Cycl'
+        elif lang == 'kaz':
+            return 'kaz_Cyrl'
+        elif lang == 'mhr':
+            raise ValueError('Language: mhr is not supported by NLLB-200')
+        else:
+            raise NotImplementedError('Language not supported yet.')
 
