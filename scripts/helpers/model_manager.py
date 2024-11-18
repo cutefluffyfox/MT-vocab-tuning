@@ -97,9 +97,9 @@ class NLLB200Model(HFModel):
             return 'eng_Latn'
         elif lang == 'ru':
             return 'rus_Cyrl'
-        elif lang == 'tat':
+        elif lang == 'tat' or lang == 'tt':
             return 'tat_Cycl'
-        elif lang == 'kaz':
+        elif lang == 'kaz' or lang == 'kk':
             return 'kaz_Cyrl'
         elif lang == 'mhr':
             raise ValueError('Language: mhr is not supported by NLLB-200')
