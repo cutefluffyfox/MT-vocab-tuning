@@ -168,9 +168,9 @@ class HFModel(BaseModel):
                 self.model.save_pretrained(f"model.sft.{src_lang}_{dst_lang}.{i}")
                 self.tokenizer.save_pretrained(f"tokenizer.sft.{src_lang}_{dst_lang}.{i}")
     
-    # save final model
-    self.model.save_pretrained(f"model.sft.{src_lang}_{dst_lang}.{it_number}.final")
-    self.tokenizer.save_pretrained(f"tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
+        # save final model
+        self.model.save_pretrained(f"model.sft.{src_lang}_{dst_lang}.{it_number}.final")
+        self.tokenizer.save_pretrained(f"tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
 
 
 class Madlad400Model(HFModel):
