@@ -200,28 +200,30 @@ class HFModel(BaseModel):
                         ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{i}")
                         ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{i}")
                     
-                        recursive_upload(f"model.sft.{src_lang}_{dst_lang}.{i}", f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{i}")
-                        recursive_upload(f"tokenizer.sft.{src_lang}_{dst_lang}.{i}", f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{i}")
+                        recursive_upload(ya_client, f"model.sft.{src_lang}_{dst_lang}.{i}", f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{i}")
+                        recursive_upload(ya_client, f"tokenizer.sft.{src_lang}_{dst_lang}.{i}", f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{i}")
                         
                         shutil.rmtree(f"model.sft.{src_lang}_{dst_lang}.{i}")
                         shutil.rmtree(f"tokenizer.sft.{src_lang}_{dst_lang}.{i}")
                     except Exception as ex:
                         print('Failed to backup on ya disk')
+                        print(ex)
     
         # save final model
         
         self.model.save_pretrained(f"model.sft.{src_lang}_{dst_lang}.{it_number}.final")
         self.tokenizer.save_pretrained(f"tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
-        
-        try:
-            ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}")
-            ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{it_number}.final")
-            ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
+        if ya_client is not None:
+            try:
+                ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}")
+                ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{it_number}.final")
+                ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
 
-            recursive_upload(f"model.sft.{src_lang}_{dst_lang}.{it_number}.final", f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{it_number}.final")
-            recursive_upload(f"tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final", f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
-        except Exception as ex:
-            print('Failed to backup on ya disk')
+                recursive_upload(ya_client, f"model.sft.{src_lang}_{dst_lang}.{it_number}.final", f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{it_number}.final")
+                recursive_upload(ya_client, f"tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final", f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
+            except Exception as ex:
+                print('Failed to backup on ya disk')
+                print(ex)
 
 
 class Madlad400Model(HFModel):
