@@ -7,6 +7,31 @@ from tqdm.auto import tqdm, trange
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from transformers.optimization import Adafactor
 from transformers import get_constant_schedule_with_warmup
+# TODO: cleanup yadisk to other place
+import yadisk
+import posixpath
+import shutil
+
+
+def recursive_upload(client: yadisk.Client, from_dir: str, to_dir: str):
+    for root, dirs, files in os.walk(from_dir):
+        p = root.split(from_dir)[1].strip(os.path.sep)
+        dir_path = posixpath.join(to_dir, p)
+
+        try:
+            client.mkdir(dir_path)
+        except yadisk.exceptions.PathExistsError:
+            pass
+
+        for file in files:
+            file_path = posixpath.join(dir_path, file)
+            p_sys = p.replace("/", os.path.sep)
+            in_path = os.path.join(from_dir, p_sys, file)
+
+            try:
+                client.upload(in_path, file_path)
+            except yadisk.exceptions.PathExistsError:
+                pass
 
 
 class BaseModel:
@@ -69,11 +94,13 @@ class HFModel(BaseModel):
         outputs = self.model.generate(**input_ids, max_new_tokens=max_tokens)
         return self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
     
-    def _train(
+    def train(
         self, 
         data: pd.DataFrame,
         src_lang: str, 
         dst_lang: str, 
+        experiment_name: str,
+        ya_client: yadisk.Client = None
         batch_size: int = 16, 
         max_length : int = 128,
         training_steps: int = 100,
@@ -164,13 +191,37 @@ class HFModel(BaseModel):
                 # each `save_every` steps, report average loss at these steps
                 print(i, np.mean(losses[-save_every:]))
 
-            if i % save_every == 0: 
+            if i % save_every == 0:
                 self.model.save_pretrained(f"model.sft.{src_lang}_{dst_lang}.{i}")
                 self.tokenizer.save_pretrained(f"tokenizer.sft.{src_lang}_{dst_lang}.{i}")
+                if ya_client is not None:
+                    try:
+                        ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}")
+                        ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{i}")
+                        ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{i}")
+                    
+                        recursive_upload(f"model.sft.{src_lang}_{dst_lang}.{i}", f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{i}")
+                        recursive_upload(f"tokenizer.sft.{src_lang}_{dst_lang}.{i}", f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{i}")
+                        
+                        shutil.rmtree(f"model.sft.{src_lang}_{dst_lang}.{i}")
+                        shutil.rmtree(f"tokenizer.sft.{src_lang}_{dst_lang}.{i}")
+                    except Exception as ex:
+                        print('Failed to backup on ya disk')
     
         # save final model
+        
         self.model.save_pretrained(f"model.sft.{src_lang}_{dst_lang}.{it_number}.final")
         self.tokenizer.save_pretrained(f"tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
+        
+        try:
+            ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}")
+            ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{it_number}.final")
+            ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
+
+            recursive_upload(f"model.sft.{src_lang}_{dst_lang}.{it_number}.final", f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{it_number}.final")
+            recursive_upload(f"tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final", f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
+        except Exception as ex:
+            print('Failed to backup on ya disk')
 
 
 class Madlad400Model(HFModel):
