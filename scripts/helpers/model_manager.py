@@ -11,6 +11,7 @@ from transformers import get_constant_schedule_with_warmup
 import yadisk
 import posixpath
 import shutil
+import os
 
 
 def recursive_upload(client: yadisk.Client, from_dir: str, to_dir: str):
