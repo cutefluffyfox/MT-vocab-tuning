@@ -1,5 +1,12 @@
+import gc
 import torch
+import numpy as np
+import pandas as pd
+from time import time
+from tqdm.auto import tqdm, trange
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers.optimization import Adafactor
+from transformers import get_constant_schedule_with_warmup
 
 
 class BaseModel:
@@ -42,6 +49,11 @@ class BaseModel:
                 'dst_lang': dst_lang
             })
         return output
+    
+    @staticmethod
+    def cleanup():
+        gc.collect()
+        torch.cuda.empty_cache()
 
 
 class HFModel(BaseModel):
@@ -56,10 +68,113 @@ class HFModel(BaseModel):
     def translate(self, input_ids: dict, max_tokens: int = 100, *args, **kwargs) -> list[str]:
         outputs = self.model.generate(**input_ids, max_new_tokens=max_tokens)
         return self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+    
+    def _train(
+        self, 
+        data: pd.DataFrame,
+        src_lang: str, 
+        dst_lang: str, 
+        batch_size: int = 16, 
+        max_length : int = 128,
+        training_steps: int = 100,
+        save_every: int = 1000,
+        learn_both_direction: bool = False,
+        ttl: int = 4*60*60,
+    ):
+        # sanity check on data
+        assert data[src_lang].shape[0] > 0, f"Column `{src_lang}` is empty"
+        assert data[dst_lang].shape[0] > 0, f"Column `{dst_lang}` is empty"
+        assert data[src_lang].shape == data[dst_lang].shape, f"Length mismatch in columns `{src_lang}` and `{dst_lang}`"
+        
+        # TODO: move it to outer space
+        def get_batch_pairs(batch_size: int):
+            idx = 0
+            straight = True
+            n = data.shape[0]
+            while True:
+                srcs, dsts = [], []
+                for _ in range(batch_size):
+                    row = data.iloc[idx%n]
+                    srcs.append(row[src_lang])
+                    dsts.append(row[dst_lang])
+                    idx += 1
+                if straight:
+                    yield (srcs, dsts, src_lang, dst_lang)
+                else:
+                    yield (dsts, srcs, dst_lang, src_lang)
+                if learn_both_direction:
+                    straight = not straight
+        
+        # scheduler & optimizer
+        self.model.cuda()
+        optimizer = Adafactor(
+            [p for p in self.model.parameters() if p.requires_grad],
+            scale_parameter=False,
+            relative_step=False,
+            lr=1e-4,
+            clip_threshold=1.0,
+            weight_decay=1e-3,
+        )
+        scheduler = get_constant_schedule_with_warmup(optimizer, num_warmup_steps=1000)
+        
+        # set model to training mode (enable grad)
+        self.model.train()
+        
+        # some extra variables to get track of what is happening
+        losses = []
+        start_time = time()
+        it_number = 0
+        
+        x, y, loss = None, None, None
+        self.cleanup()
+
+        tq = trange(len(losses), training_steps)
+        for i in tq:
+            if (time() - start_time) >= ttl:
+                print(f'Triggered time to leave! Current time: {time()}. Start time: {start_time}. TTL: {ttl}.')
+                break
+            batch = next(get_batch_pairs(batch_size))
+            xx, yy, lang1, lang2 = batch
+            try:
+                self.tokenizer.src_lang = lang1
+                x = self.tokenizer(xx, return_tensors='pt', padding=True, truncation=True, max_length=max_length).to(self.model.device)
+                self.tokenizer.src_lang = lang2
+                y = self.tokenizer(yy, return_tensors='pt', padding=True, truncation=True, max_length=max_length).to(self.model.device)
+                # -100 is a magic value ignored in the loss function
+                # because we don't want the model to learn to predict padding ids
+                y.input_ids[y.input_ids == self.tokenizer.pad_token_id] = -100
+
+                loss = self.model(**x, labels=y.input_ids).loss
+                loss.backward()
+                losses.append(loss.item())
+
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+                scheduler.step()
+
+            except RuntimeError as e:  # usually, it is out-of-memory
+                optimizer.zero_grad(set_to_none=True)
+                x, y, loss = None, None, None
+                self.cleanup()
+                print('error', max(len(s) for s in xx + yy), e)
+                # continue i don't want it due to the risk of loosing checkpoint
+            
+            it_number += 1
+            if i % save_every == 0:
+                # each `save_every` steps, report average loss at these steps
+                print(i, np.mean(losses[-save_every:]))
+
+            if i % save_every == 0: 
+                self.model.save_pretrained(f"model.sft.{src_lang}_{dst_lang}.{i}")
+                self.tokenizer.save_pretrained(f"tokenizer.sft.{src_lang}_{dst_lang}.{i}")
+    
+    # save final model
+    self.model.save_pretrained(f"model.sft.{src_lang}_{dst_lang}.{it_number}.final")
+    self.tokenizer.save_pretrained(f"tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
 
 
 class Madlad400Model(HFModel):
-    def __init__(self, convert_to_float16: bool = False, device: str = 'auto'):
+    def __init__(self, convert_to_float16: bool = True, device: str = 'auto'):
         super(Madlad400Model, self).__init__(
             'google/madlad400-3b-mt',
             convert_to_float16=convert_to_float16,
@@ -72,7 +187,7 @@ class Madlad400Model(HFModel):
 
 
 class NLLB200Model(HFModel):
-    def __init__(self, convert_to_float16: bool = False, device: str = 'auto'):
+    def __init__(self, convert_to_float16: bool = True, device: str = 'auto'):
         super(NLLB200Model, self).__init__(
             'facebook/nllb-200-distilled-1.3B',
             convert_to_float16=convert_to_float16,
