@@ -100,7 +100,7 @@ class HFModel(BaseModel):
         src_lang: str, 
         dst_lang: str, 
         experiment_name: str,
-        ya_client: yadisk.Client = None
+        ya_client: yadisk.Client = None,
         batch_size: int = 16, 
         max_length : int = 128,
         training_steps: int = 100,
