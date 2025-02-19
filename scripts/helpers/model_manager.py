@@ -114,6 +114,10 @@ class HFModel(BaseModel):
         assert data[dst_lang].shape[0] > 0, f"Column `{dst_lang}` is empty"
         assert data[src_lang].shape == data[dst_lang].shape, f"Length mismatch in columns `{src_lang}` and `{dst_lang}`"
         
+        # prepare ya-disk env
+        if ya_client is not None:
+            ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}")
+        
         # TODO: move it to outer space
         def get_batch_pairs(batch_size: int):
             idx = 0
@@ -197,7 +201,6 @@ class HFModel(BaseModel):
                 self.tokenizer.save_pretrained(f"tokenizer.sft.{src_lang}_{dst_lang}.{i}")
                 if ya_client is not None:
                     try:
-                        ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}")
                         ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{i}")
                         ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{i}")
                     
@@ -216,7 +219,6 @@ class HFModel(BaseModel):
         self.tokenizer.save_pretrained(f"tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
         if ya_client is not None:
             try:
-                ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}")
                 ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{it_number}.final")
                 ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
 
