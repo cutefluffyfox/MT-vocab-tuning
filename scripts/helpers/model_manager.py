@@ -1,38 +1,16 @@
 import gc
 import torch
+import yadisk
+import shutil
 import numpy as np
 import pandas as pd
 from time import time
-from tqdm.auto import tqdm, trange
+from tqdm.auto import trange
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from transformers.optimization import Adafactor
 from transformers import get_constant_schedule_with_warmup
-# TODO: cleanup yadisk to other place
-import yadisk
-import posixpath
-import shutil
-import os
-
-
-def recursive_upload(client: yadisk.Client, from_dir: str, to_dir: str):
-    for root, dirs, files in os.walk(from_dir):
-        p = root.split(from_dir)[1].strip(os.path.sep)
-        dir_path = posixpath.join(to_dir, p)
-
-        try:
-            client.mkdir(dir_path)
-        except yadisk.exceptions.PathExistsError:
-            pass
-
-        for file in files:
-            file_path = posixpath.join(dir_path, file)
-            p_sys = p.replace("/", os.path.sep)
-            in_path = os.path.join(from_dir, p_sys, file)
-
-            try:
-                client.upload(in_path, file_path)
-            except yadisk.exceptions.PathExistsError:
-                pass
+from scripts.helpers.yadisk_manager import recursive_upload
+from scripts.helpers.batch_processor import get_batch_pairs
 
 
 class BaseModel:
@@ -107,7 +85,12 @@ class HFModel(BaseModel):
         training_steps: int = 100,
         save_every: int = 1000,
         learn_both_direction: bool = False,
+        yadisk_dir: str = '/bs-diploma/experiments/kaggle',
         ttl: int = 4*60*60,
+        lr: float = 1e-4,
+        clip_threshold: float = 1.0,
+        weight_decay: float = 1e-3,
+        num_warmup_steps: int = 1000,
     ):
         # sanity check on data
         assert data[src_lang].shape[0] > 0, f"Column `{src_lang}` is empty"
@@ -116,26 +99,11 @@ class HFModel(BaseModel):
         
         # prepare ya-disk env
         if ya_client is not None:
-            ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}")
-        
-        # TODO: move it to outer space
-        def get_batch_pairs(batch_size: int):
-            idx = 0
-            straight = True
-            n = data.shape[0]
-            while True:
-                srcs, dsts = [], []
-                for _ in range(batch_size):
-                    row = data.iloc[idx%n]
-                    srcs.append(row[src_lang])
-                    dsts.append(row[dst_lang])
-                    idx += 1
-                if straight:
-                    yield (srcs, dsts, src_lang, dst_lang)
-                else:
-                    yield (dsts, srcs, dst_lang, src_lang)
-                if learn_both_direction:
-                    straight = not straight
+            try:
+                ya_client.mkdir(f"{yadisk_dir}/{experiment_name}")
+            except yadisk.exceptions.PathExistsError as ex:
+                print('Experiment with this name already exists in yaDis')
+                raise ex
         
         # scheduler & optimizer
         self.model.cuda()
@@ -143,11 +111,11 @@ class HFModel(BaseModel):
             [p for p in self.model.parameters() if p.requires_grad],
             scale_parameter=False,
             relative_step=False,
-            lr=1e-4,
-            clip_threshold=1.0,
-            weight_decay=1e-3,
+            lr=lr,
+            clip_threshold=clip_threshold,
+            weight_decay=weight_decay,
         )
-        scheduler = get_constant_schedule_with_warmup(optimizer, num_warmup_steps=1000)
+        scheduler = get_constant_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps)
         
         # set model to training mode (enable grad)
         self.model.train()
@@ -156,8 +124,11 @@ class HFModel(BaseModel):
         losses = []
         start_time = time()
         it_number = 0
-        
-        x, y, loss = None, None, None
+        batch_generator = get_batch_pairs(
+            data=data, batch_size=batch_size,
+            src_lang=src_lang, dst_lang=dst_lang,
+            learn_both_direction=learn_both_direction,
+        )
         self.cleanup()
 
         tq = trange(len(losses), training_steps)
@@ -165,7 +136,7 @@ class HFModel(BaseModel):
             if (time() - start_time) >= ttl:
                 print(f'Triggered time to leave! Current time: {time()}. Start time: {start_time}. TTL: {ttl}.')
                 break
-            batch = next(get_batch_pairs(batch_size))
+            batch = next(batch_generator)
             xx, yy, lang1, lang2 = batch
             try:
                 self.tokenizer.src_lang = lang1
@@ -186,10 +157,9 @@ class HFModel(BaseModel):
 
             except RuntimeError as e:  # usually, it is out-of-memory
                 optimizer.zero_grad(set_to_none=True)
-                x, y, loss = None, None, None
                 self.cleanup()
                 print('error', max(len(s) for s in xx + yy), e)
-                # continue i don't want it due to the risk of loosing checkpoint
+                # continue  # I don't want it due to the risk of loosing checkpoint
             
             it_number += 1
             if i % save_every == 0:
@@ -201,11 +171,11 @@ class HFModel(BaseModel):
                 self.tokenizer.save_pretrained(f"tokenizer.sft.{src_lang}_{dst_lang}.{i}")
                 if ya_client is not None:
                     try:
-                        ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{i}")
-                        ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{i}")
+                        ya_client.mkdir(f"{yadisk_dir}/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{i}")
+                        ya_client.mkdir(f"{yadisk_dir}/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{i}")
                     
-                        recursive_upload(ya_client, f"model.sft.{src_lang}_{dst_lang}.{i}", f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{i}")
-                        recursive_upload(ya_client, f"tokenizer.sft.{src_lang}_{dst_lang}.{i}", f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{i}")
+                        recursive_upload(ya_client, f"model.sft.{src_lang}_{dst_lang}.{i}", f"{yadisk_dir}/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{i}")
+                        recursive_upload(ya_client, f"tokenizer.sft.{src_lang}_{dst_lang}.{i}", f"{yadisk_dir}/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{i}")
                         
                         shutil.rmtree(f"model.sft.{src_lang}_{dst_lang}.{i}")
                         shutil.rmtree(f"tokenizer.sft.{src_lang}_{dst_lang}.{i}")
@@ -214,16 +184,15 @@ class HFModel(BaseModel):
                         print(ex)
     
         # save final model
-        
         self.model.save_pretrained(f"model.sft.{src_lang}_{dst_lang}.{it_number}.final")
         self.tokenizer.save_pretrained(f"tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
         if ya_client is not None:
             try:
-                ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{it_number}.final")
-                ya_client.mkdir(f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
+                ya_client.mkdir(f"{yadisk_dir}/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{it_number}.final")
+                ya_client.mkdir(f"{yadisk_dir}/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
 
-                recursive_upload(ya_client, f"model.sft.{src_lang}_{dst_lang}.{it_number}.final", f"/bs-diploma/experiments/kaggle/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{it_number}.final")
-                recursive_upload(ya_client, f"tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final", f"/bs-diploma/experiments/kaggle/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
+                recursive_upload(ya_client, f"model.sft.{src_lang}_{dst_lang}.{it_number}.final", f"{yadisk_dir}/{experiment_name}/model.sft.{src_lang}_{dst_lang}.{it_number}.final")
+                recursive_upload(ya_client, f"tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final", f"{yadisk_dir}/{experiment_name}/tokenizer.sft.{src_lang}_{dst_lang}.{it_number}.final")
             except Exception as ex:
                 print('Failed to backup on ya disk')
                 print(ex)
