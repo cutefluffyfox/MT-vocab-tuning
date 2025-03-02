@@ -246,3 +246,6 @@ class NLLB200Model(HFModel):
         else:
             raise NotImplementedError(f'Language `{lang}` not supported yet.')
 
+    def update_tokenizer(self):
+        pass
+

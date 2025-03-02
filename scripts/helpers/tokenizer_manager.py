@@ -7,6 +7,7 @@ import pandas as pd
 from tqdm import tqdm
 import sentencepiece as spm
 from transformers import NllbTokenizer
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from sacremoses import MosesPunctNormalizer
 from sentencepiece import sentencepiece_model_pb2 as sp_pb2_model
 
@@ -57,7 +58,7 @@ def train_sentencepiece(all_texts, required_chars, tokenizer_prefix: str = 'smp_
 
     all_texts_file = 'myv_texts_plain.txt'
 
-    with open(all_texts_file, 'w') as f:
+    with open(all_texts_file, 'w', encoding='UTF-8') as f:
         for i, text in enumerate(all_texts):
             print(text, file=f)
 
@@ -108,3 +109,79 @@ def merge_nllb_new_tokenizers(tokenizer_prefix: str, new_tokenizer_name: str):
     NEW_SPM_NAME = f'spm_{new_tokenizer_name}.model'
     with open(NEW_SPM_NAME, 'wb') as f:
         f.write(old_spm.SerializeToString())
+
+
+def reinitialize_weights(new_tokenizer_name: str):
+    model_name = 'facebook/nllb-200-distilled-1.3B'
+
+    # loading the tokenizers
+    tokenizer_old = NllbTokenizer.from_pretrained(model_name)
+    tokenizer = NllbTokenizer.from_pretrained(model_name, vocab_file=new_tokenizer_name)
+    print(len(tokenizer_old), len(tokenizer))  # must see difference
+    added_vocab = set(tokenizer.get_vocab()).difference(set(tokenizer_old.get_vocab()))
+    print(len(added_vocab))  # new vocab size
+
+    # loading and resizing the model
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    model.resize_token_embeddings(len(tokenizer))
+
+    # re-initializing the new embeddings
+    for t in tqdm(added_vocab):
+        tt = tokenizer_old(t, add_special_tokens=False).input_ids
+        if len(tt) == 0:
+            tt = [tokenizer_old.unk_token_id]
+        idx = tokenizer.convert_tokens_to_ids(t)
+        model.model.shared.weight.data[idx] = model.model.shared.weight.data[tt].mean(0)  # WARN: mean initialization
+
+
+def fix_tokenizer(tokenizer, new_lang='tyv_Cyrl'):
+    """
+    Add a new language token to the tokenizer vocabulary
+    (this should be done each time after its initialization)
+    """
+    old_len = len(tokenizer) - int(new_lang in tokenizer.added_tokens_encoder)
+    tokenizer.lang_code_to_id[new_lang] = old_len-1
+    tokenizer.id_to_lang_code[old_len-1] = new_lang
+    # always move "mask" to the last position
+    tokenizer.fairseq_tokens_to_ids["<mask>"] = len(tokenizer.sp_model) + len(tokenizer.lang_code_to_id) + tokenizer.fairseq_offset
+
+    tokenizer.fairseq_tokens_to_ids.update(tokenizer.lang_code_to_id)
+    tokenizer.fairseq_ids_to_tokens = {v: k for k, v in tokenizer.fairseq_tokens_to_ids.items()}
+    if new_lang not in tokenizer._additional_special_tokens:
+        tokenizer._additional_special_tokens.append(new_lang)
+
+    # clear the added token encoder; otherwise a new token may end up there by mistake
+    tokenizer.added_tokens_encoder = {}
+    tokenizer.added_tokens_decoder = {}
+
+
+def add_new_full_language(data: pd.DataFrame, lang: str, similar_lang: str):
+    all_texts, required_chars = preprocess_corpora(
+        data=data,
+        lang=lang,
+    )
+    train_sentencepiece(
+        all_texts=all_texts,
+        required_chars=required_chars,
+        tokenizer_prefix=f'smp_{lang}_16k'
+    )
+    merge_nllb_new_tokenizers(f'smp_{lang}_16k', f'nllb_{lang}')
+
+    model_name = "facebook/nllb-200-distilled-1.3B"
+    # loading the tokenizer and the model
+    tokenizer = AutoTokenizer.from_pretrained(model_name, vocab_file=f'nllb_{lang}')
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    # patching them
+    fix_tokenizer(tokenizer)
+    model.resize_token_embeddings(len(tokenizer))
+
+    # fixing the new/moved token embeddings in the model
+    added_token_id = tokenizer.convert_tokens_to_ids(f'{lang}_Cyrl')
+    similar_lang_id = tokenizer.convert_tokens_to_ids(f'{similar_lang}_Cyrl')
+    embeds = model.model.shared.weight.data
+    # moving the embedding for "mask" to its new position
+    embeds[added_token_id + 1] = embeds[added_token_id]
+    # initializing new language token with a token of a similar language
+    embeds[added_token_id] = embeds[similar_lang_id]
+
+    return model, tokenizer
