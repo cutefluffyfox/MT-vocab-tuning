@@ -1,15 +1,20 @@
+import os
 import re
 import sys
+import json
+import shutil
 import unicodedata
 from collections import Counter
 
 import pandas as pd
 from tqdm import tqdm
-import sentencepiece as spm
-from transformers import NllbTokenizer
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from sacremoses import MosesPunctNormalizer
+
+import sentencepiece as spm
 from sentencepiece import sentencepiece_model_pb2 as sp_pb2_model
+
+from transformers import NllbTokenizer
+from transformers.models.nllb.tokenization_nllb import FAIRSEQ_LANGUAGE_CODES
 
 
 def get_non_printing_char_replacer(replace_by: str = " "):
@@ -55,7 +60,6 @@ def preprocess_corpora(data: pd.DataFrame, lang: str):
 
 
 def train_sentencepiece(all_texts, required_chars, tokenizer_prefix: str = 'smp_tyvan_16k'):
-
     all_texts_file = 'myv_texts_plain.txt'
 
     with open(all_texts_file, 'w', encoding='UTF-8') as f:
@@ -80,24 +84,23 @@ def train_sentencepiece(all_texts, required_chars, tokenizer_prefix: str = 'smp_
     )
 
 
-def merge_nllb_new_tokenizers(tokenizer_prefix: str, new_tokenizer_name: str):
+def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokenizer_name: str):
     # reading the NLLB and the New sentencepiece models into a native format
-    tokenizer = NllbTokenizer.from_pretrained('facebook/nllb-200-distilled-600M')
     sp_trained = spm.SentencePieceProcessor(model_file=f'{tokenizer_prefix}.model')
     added_spm = sp_pb2_model.ModelProto()
     added_spm.ParseFromString(sp_trained.serialized_model_proto())
+
+    tokenizer = NllbTokenizer.from_pretrained(model_name)
+
     old_spm = sp_pb2_model.ModelProto()
     old_spm.ParseFromString(tokenizer.sp_model.serialized_model_proto())
 
     # adding the missing tokens to the NLLB sentencepiece model
     nllb_tokens_set = {p.piece for p in old_spm.pieces}
     prev_min_score = old_spm.pieces[-1].score
+
     for p in added_spm.pieces:
         piece = p.piece
-        # !!! THIS FIX WAS ADDED LATER; it is required for CT2 compatibility !!!
-        # 1 is ordinary token, non-1 is special token; we don't want to copy the special tokens
-        if p.type != 1:
-            continue
         if piece not in nllb_tokens_set:
             new_p = sp_pb2_model.ModelProto().SentencePiece()
             new_p.piece = piece
@@ -106,56 +109,47 @@ def merge_nllb_new_tokenizers(tokenizer_prefix: str, new_tokenizer_name: str):
             old_spm.pieces.append(new_p)
 
     # saving the result to disk
-    NEW_SPM_NAME = f'spm_{new_tokenizer_name}.model'
-    with open(NEW_SPM_NAME, 'wb') as f:
+    with open(f'spm_{new_tokenizer_name}.model', 'wb') as f:
         f.write(old_spm.SerializeToString())
 
 
-def reinitialize_weights(new_tokenizer_name: str):
-    model_name = 'facebook/nllb-200-distilled-1.3B'
+def update_nllb_tokenizer(
+    old_tokenizer: NllbTokenizer,
+    new_spm_path: str,
+    new_lang_codes: list[str],
+) -> NllbTokenizer:
 
-    # loading the tokenizers
-    tokenizer_old = NllbTokenizer.from_pretrained(model_name)
-    tokenizer = NllbTokenizer.from_pretrained(model_name, vocab_file=new_tokenizer_name)
-    print(len(tokenizer_old), len(tokenizer))  # must see difference
-    added_vocab = set(tokenizer.get_vocab()).difference(set(tokenizer_old.get_vocab()))
-    print(len(added_vocab))  # new vocab size
+    TKN_DIR = "old_tokenizer"  # will be automatically deleted
+    old_tokenizer.save_pretrained(TKN_DIR)
 
-    # loading and resizing the model
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-    model.resize_token_embeddings(len(tokenizer))
+    with open(f"{TKN_DIR}/tokenizer_config.json", "r") as f:
+        cfg = json.load(f)
+    cfg["added_tokens_decoder"] = {
+        k: v
+        for k, v in cfg["added_tokens_decoder"].items()
+        if k in ["0", "1", "2", "3"]
+    }
+    cfg["additional_special_tokens"] = []
+    with open(f"{TKN_DIR}/tokenizer_config.json", "w") as f:
+        json.dump(cfg, f, indent=2)
 
-    # re-initializing the new embeddings
-    for t in tqdm(added_vocab):
-        tt = tokenizer_old(t, add_special_tokens=False).input_ids
-        if len(tt) == 0:
-            tt = [tokenizer_old.unk_token_id]
-        idx = tokenizer.convert_tokens_to_ids(t)
-        model.model.shared.weight.data[idx] = model.model.shared.weight.data[tt].mean(0)  # WARN: mean initialization
+    # this contains added tokens: language codes and mask
+    os.remove(f"{TKN_DIR}/added_tokens.json")
+    os.remove(f"{TKN_DIR}/special_tokens_map.json")
+    os.remove(f"{TKN_DIR}/sentencepiece.bpe.model")
+    shutil.copy(new_spm_path, f"{TKN_DIR}/sentencepiece.bpe.model")
 
+    new_tokenizer = NllbTokenizer.from_pretrained(
+        TKN_DIR,
+        additional_special_tokens=sorted(FAIRSEQ_LANGUAGE_CODES + new_lang_codes),
+    )
 
-def fix_tokenizer(tokenizer, new_lang='tyv_Cyrl'):
-    """
-    Add a new language token to the tokenizer vocabulary
-    (this should be done each time after its initialization)
-    """
-    old_len = len(tokenizer) - int(new_lang in tokenizer.added_tokens_encoder)
-    tokenizer.lang_code_to_id[new_lang] = old_len-1
-    tokenizer.id_to_lang_code[old_len-1] = new_lang
-    # always move "mask" to the last position
-    tokenizer.fairseq_tokens_to_ids["<mask>"] = len(tokenizer.sp_model) + len(tokenizer.lang_code_to_id) + tokenizer.fairseq_offset
-
-    tokenizer.fairseq_tokens_to_ids.update(tokenizer.lang_code_to_id)
-    tokenizer.fairseq_ids_to_tokens = {v: k for k, v in tokenizer.fairseq_tokens_to_ids.items()}
-    if new_lang not in tokenizer._additional_special_tokens:
-        tokenizer._additional_special_tokens.append(new_lang)
-
-    # clear the added token encoder; otherwise a new token may end up there by mistake
-    tokenizer.added_tokens_encoder = {}
-    tokenizer.added_tokens_decoder = {}
+    # clean tmp dir
+    shutil.rmtree(TKN_DIR)
+    return new_tokenizer
 
 
-def add_new_full_language(data: pd.DataFrame, lang: str, similar_lang: str):
+def add_new_full_language(data: pd.DataFrame, lang: str, model_name: str):
     all_texts, required_chars = preprocess_corpora(
         data=data,
         lang=lang,
@@ -165,23 +159,28 @@ def add_new_full_language(data: pd.DataFrame, lang: str, similar_lang: str):
         required_chars=required_chars,
         tokenizer_prefix=f'smp_{lang}_16k'
     )
-    merge_nllb_new_tokenizers(f'smp_{lang}_16k', f'nllb_{lang}')
+    merge_nllb_new_tokenizers(
+        model_name=model_name,
+        tokenizer_prefix=f'smp_{lang}_16k',
+        new_tokenizer_name=f'nllb_{lang}'
+    )
 
-    model_name = "facebook/nllb-200-distilled-1.3B"
-    # loading the tokenizer and the model
-    tokenizer = AutoTokenizer.from_pretrained(model_name, vocab_file=f'nllb_{lang}')
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-    # patching them
-    fix_tokenizer(tokenizer)
-    model.resize_token_embeddings(len(tokenizer))
+    # load old tokenizer for sanity check
+    tokenizer_old = NllbTokenizer.from_pretrained(model_name)
+    tokenizer = update_nllb_tokenizer(
+        old_tokenizer=tokenizer_old,
+        new_spm_path=f'spm_nllb_{lang}.model',
+        new_lang_codes=[f'{lang}_Cyrl']
+    )
 
-    # fixing the new/moved token embeddings in the model
-    added_token_id = tokenizer.convert_tokens_to_ids(f'{lang}_Cyrl')
-    similar_lang_id = tokenizer.convert_tokens_to_ids(f'{similar_lang}_Cyrl')
-    embeds = model.model.shared.weight.data
-    # moving the embedding for "mask" to its new position
-    embeds[added_token_id + 1] = embeds[added_token_id]
-    # initializing new language token with a token of a similar language
-    embeds[added_token_id] = embeds[similar_lang_id]
+    # print len and last 2 tokens (should be some lang and <mask>)
+    print(f'Old tokenizer length: {len(tokenizer_old)}')
+    print(f'New tokenizer length: {len(tokenizer)}')
 
-    return model, tokenizer
+    # sanity check that everything loaded correctly
+    new_code = tokenizer.convert_tokens_to_ids(f'{lang}_Cyrl')
+    mask_code = tokenizer.convert_tokens_to_ids('<mask>')
+    print(f"Code of `{lang}_Cyrl`: {new_code}")
+    print(f"Code of `<mask>`: {mask_code}")
+    print(f"Decoded `{lang}_Cyrl` and `<mask>`:", tokenizer.convert_ids_to_tokens([new_code, mask_code]))
+    return tokenizer
