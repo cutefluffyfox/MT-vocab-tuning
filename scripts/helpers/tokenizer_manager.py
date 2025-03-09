@@ -119,7 +119,7 @@ def update_nllb_tokenizer(
     new_lang_codes: list[str],
 ) -> NllbTokenizer:
 
-    TKN_DIR = "old_tokenizer"  # will be automatically deleted
+    TKN_DIR = "old_tokenizer"  # todo: make it temporary
     old_tokenizer.save_pretrained(TKN_DIR)
 
     with open(f"{TKN_DIR}/tokenizer_config.json", "r") as f:
@@ -144,8 +144,8 @@ def update_nllb_tokenizer(
         additional_special_tokens=sorted(FAIRSEQ_LANGUAGE_CODES + new_lang_codes),
     )
 
-    # clean tmp dir
-    shutil.rmtree(TKN_DIR)
+    # TODO: clean-up dir
+    # shutil.rmtree(TKN_DIR)
     return new_tokenizer
 
 
