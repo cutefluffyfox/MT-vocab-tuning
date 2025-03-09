@@ -129,6 +129,7 @@ class HFModel(BaseModel):
             src_lang=src_lang, dst_lang=dst_lang,
             learn_both_direction=learn_both_direction,
         )
+        print(batch_generator)
         self.cleanup()
 
         tq = trange(len(losses), training_steps)
