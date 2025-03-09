@@ -184,3 +184,22 @@ def add_new_full_language(data: pd.DataFrame, lang: str, model_name: str):
     print(f"Code of `<mask>`: {mask_code}")
     print(f"Decoded `{lang}_Cyrl` and `<mask>`:", tokenizer.convert_ids_to_tokens([new_code, mask_code]))
     return tokenizer
+
+
+def initialize_new_model_emb(model_name: str, model, tokenizer, lang: str, similar_lang: str):
+    tokenizer_old = NllbTokenizer.from_pretrained(model_name)
+    model.resize_token_embeddings(len(tokenizer))
+    moved_tokens = list(tokenizer_old.lang_code_to_id) + ['<mask>']
+    model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(moved_tokens)] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(moved_tokens)]
+    model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(f'{lang}_Cyrl')] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(f'{similar_lang}_Cyrl')]
+    added_vocab = set(tokenizer.get_vocab()).difference(set(tokenizer_old.get_vocab()))
+    print('Amount of new tokens:', len(added_vocab))
+    for t in tqdm(added_vocab):
+        if t == f'{lang}_Cyrl':
+            continue
+        tt = tokenizer_old(t, add_special_tokens=False).input_ids
+        if len(tt) == 0:
+            print(f'empty token "{t}"/{tokenizer.convert_tokens_to_ids(t)}')
+            tt = [tokenizer_old.unk_token_id]
+        model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(t)] = model.model.shared.weight.data[tt].mean(0)
+
