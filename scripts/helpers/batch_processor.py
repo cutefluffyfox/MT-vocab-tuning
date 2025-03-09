@@ -47,4 +47,4 @@ def get_batch_pairs(
             # if learn both -> swap straight parameter
             if learn_both_direction:
                 straight = not straight
-    return generator
+    return generator()
