@@ -190,15 +190,17 @@ def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, l
     tokenizer_old = NllbTokenizer.from_pretrained(model_name)
     model.resize_token_embeddings(len(tokenizer))
 
-    # because I use newer version of transformers, we do not actually move mask or lang tokens
-    # moved_tokens = list(tokenizer_old.lang_code_to_id) + ['<mask>']
-    # model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(moved_tokens)] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(moved_tokens)]
+    # a bit more universal way to get moved tokens
+    old_tokens = set(tokenizer_old.get_vocab())
+    new_tokens = set(tokenizer.get_vocab())
+    added_vocab = new_tokens.difference(old_tokens)
+    moved_tokens = [token for token in old_tokens if tokenizer_old.convert_ids_to_tokens(token) != tokenizer.convert_tokens_to_ids(token)]
+
+    # copy embeddings from old token positions to new
+    model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(moved_tokens)] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(moved_tokens)]
 
     # set language family
     model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(f'{lang}_Cyrl')] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(f'{similar_lang}_Cyrl')]
-
-    # get new tokens
-    added_vocab = set(tokenizer.get_vocab()).difference(set(tokenizer_old.get_vocab()))
 
     # sanity check on index position
     added_tokens_idx = tokenizer.convert_tokens_to_ids(list(added_vocab))
