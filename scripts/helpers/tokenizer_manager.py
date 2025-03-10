@@ -194,7 +194,7 @@ def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, l
     old_tokens = set(tokenizer_old.get_vocab())
     new_tokens = set(tokenizer.get_vocab())
     added_vocab = new_tokens.difference(old_tokens)
-    moved_tokens = [token for token in old_tokens if tokenizer_old.convert_ids_to_tokens(token) != tokenizer.convert_tokens_to_ids(token)]
+    moved_tokens = [token for token in old_tokens if tokenizer_old.convert_tokens_to_ids(token) != tokenizer.convert_tokens_to_ids(token)]
 
     # copy embeddings from old token positions to new
     model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(moved_tokens)] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(moved_tokens)]
@@ -204,6 +204,7 @@ def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, l
 
     # sanity check on index position
     added_tokens_idx = tokenizer.convert_tokens_to_ids(list(added_vocab))
+    print(f'Amount of moved tokens: {len(moved_tokens)} {moved_tokens[:10]}')
     print(f'Previous tokenizer length: {len(tokenizer_old)}')
     print(f'New tokenizer length: {len(tokenizer)}')
     print(f'Ids of new tokens: min [{min(added_tokens_idx)}], max [{max(added_tokens_idx)}], mean [{sum(added_tokens_idx)//len(added_tokens_idx)}]')
