@@ -105,8 +105,11 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
     for p in added_spm.pieces:
         piece = p.piece
         if piece not in nllb_tokens_set:
-            if piece == '<pad>':
-                print('Pad not in nllb tokens set?')
+            if piece in {'<s>', '</s>', '<unk>', '<pad>', '<mask>'}:
+                print(f'{piece} not in nllb tokens set?')
+                print('This is UNEXPECTED BEHAVIOR that cause to BREAK tokenizer')
+                print('We have hotfix to just skip, but IT IS BAD if you are seeing this')
+                continue
             new_p = sp_pb2_model.ModelProto().SentencePiece()
             new_p.piece = piece
             # for all new tokens, I'll set a lower score (priority)
