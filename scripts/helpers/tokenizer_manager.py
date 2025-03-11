@@ -16,6 +16,8 @@ from sentencepiece import sentencepiece_model_pb2 as sp_pb2_model
 from transformers import NllbTokenizer
 from transformers.models.nllb.tokenization_nllb import FAIRSEQ_LANGUAGE_CODES
 
+from scripts.helpers.model_manager import BaseModel
+
 
 def get_non_printing_char_replacer(replace_by: str = " "):
     non_printable_map = {
@@ -199,7 +201,7 @@ def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, l
     # unload model from cuda (otherwise code will fail due to device map)
     device = model.device
     model.to('cpu')
-    model.cleanup()
+    BaseModel.cleanup()
 
     # copy embeddings from old token positions to new
     model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(moved_tokens)] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(moved_tokens)]
