@@ -191,10 +191,15 @@ def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, l
     model.resize_token_embeddings(len(tokenizer))
 
     # a bit more universal way to get moved tokens
-    old_tokens = set(tokenizer_old.get_vocab())
     new_tokens = set(tokenizer.get_vocab())
-    added_vocab = new_tokens.difference(old_tokens)
+    old_tokens = set(tokenizer_old.get_vocab())
+    added_vocab = new_tokens - old_tokens
     moved_tokens = [token for token in old_tokens if tokenizer_old.convert_tokens_to_ids(token) != tokenizer.convert_tokens_to_ids(token)]
+
+    # unload model from cuda (otherwise code will fail due to device map)
+    device = model.device
+    model.to('cpu')
+    model.cleanup()
 
     # copy embeddings from old token positions to new
     model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(moved_tokens)] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(moved_tokens)]
@@ -221,6 +226,8 @@ def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, l
             tt = [tokenizer_old.unk_token_id]
         model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(t)] = model.model.shared.weight.data[tt].mean(0)
 
+    # load model back to needed device
+    model.to(device)
 
 """
 
