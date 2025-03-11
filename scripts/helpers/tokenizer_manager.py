@@ -143,7 +143,7 @@ def update_nllb_tokenizer(
 
     new_tokenizer = NllbTokenizer.from_pretrained(
         TKN_DIR,
-        additional_special_tokens=sorted(FAIRSEQ_LANGUAGE_CODES + new_lang_codes),
+        additional_special_tokens=sorted(FAIRSEQ_LANGUAGE_CODES + new_lang_codes + ['<mask>']),
     )
 
     # TODO: clean-up dir
