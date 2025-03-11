@@ -105,8 +105,8 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
     for p in added_spm.pieces:
         piece = p.piece
         if piece not in nllb_tokens_set:
-            if piece == '<mask>':
-                print('Mask not in nllb tokens set?')
+            if piece == '<pad>':
+                print('Pad not in nllb tokens set?')
             new_p = sp_pb2_model.ModelProto().SentencePiece()
             new_p.piece = piece
             # for all new tokens, I'll set a lower score (priority)
