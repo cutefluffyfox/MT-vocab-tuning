@@ -189,6 +189,11 @@ def add_new_full_language(data: pd.DataFrame, lang: str, model_name: str):
 
 
 def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, lang: str, similar_lang: str):
+    # unload model from cuda (otherwise code will fail due to device map)
+    device = model.device
+    model.to('cpu')
+    BaseModel.cleanup()
+
     tokenizer_old = NllbTokenizer.from_pretrained(model_name)
     model.resize_token_embeddings(len(tokenizer))
 
@@ -197,11 +202,6 @@ def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, l
     old_tokens = set(tokenizer_old.get_vocab())
     added_vocab = new_tokens - old_tokens
     moved_tokens = [token for token in old_tokens if tokenizer_old.convert_tokens_to_ids(token) != tokenizer.convert_tokens_to_ids(token)]
-
-    # unload model from cuda (otherwise code will fail due to device map)
-    device = model.device
-    model.to('cpu')
-    BaseModel.cleanup()
 
     # copy embeddings from old token positions to new
     model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(moved_tokens)] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(moved_tokens)]
