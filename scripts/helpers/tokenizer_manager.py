@@ -62,7 +62,7 @@ def preprocess_corpora(data: pd.DataFrame, lang: str):
 
 
 def train_sentencepiece(all_texts, required_chars, tokenizer_prefix: str = 'smp_tyvan_16k'):
-    all_texts_file = 'myv_texts_plain.txt'
+    all_texts_file = 'tokenizer_texts_plain.txt'
 
     with open(all_texts_file, 'w', encoding='UTF-8') as f:
         for i, text in enumerate(all_texts):
@@ -99,11 +99,14 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
 
     # adding the missing tokens to the NLLB sentencepiece model
     nllb_tokens_set = {p.piece for p in old_spm.pieces}
+    print('Nllb tokens set len:', len(nllb_tokens_set))
     prev_min_score = old_spm.pieces[-1].score
 
     for p in added_spm.pieces:
         piece = p.piece
         if piece not in nllb_tokens_set:
+            if piece == '<mask>':
+                print('Mask not in nllb tokens set?')
             new_p = sp_pb2_model.ModelProto().SentencePiece()
             new_p.piece = piece
             # for all new tokens, I'll set a lower score (priority)
@@ -129,9 +132,9 @@ def update_nllb_tokenizer(
     cfg["added_tokens_decoder"] = {
         k: v
         for k, v in cfg["added_tokens_decoder"].items()
-        if k in ["0", "1", "2", "3"]
+        if k in ["0", "1", "2", "3"]  # we remove <mask> and <2 lang> tokens
     }
-    cfg["additional_special_tokens"] = []
+    cfg["additional_special_tokens"] = []  # <2 lang> tokens
     with open(f"{TKN_DIR}/tokenizer_config.json", "w") as f:
         json.dump(cfg, f, indent=2)
 
@@ -143,7 +146,7 @@ def update_nllb_tokenizer(
 
     new_tokenizer = NllbTokenizer.from_pretrained(
         TKN_DIR,
-        additional_special_tokens=sorted(FAIRSEQ_LANGUAGE_CODES + new_lang_codes + ['<mask>']),
+        additional_special_tokens=sorted(FAIRSEQ_LANGUAGE_CODES + new_lang_codes),
     )
 
     # TODO: clean-up dir
