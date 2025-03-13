@@ -20,8 +20,8 @@ def benchmark(model: BaseModel, direction: str):
 
     src_lang, dst_lang = direction.split('-')
     df['text'] = df[src_lang]
-    df['src_lang'] = src_lang.replace('mhr', 'chm').replace('tat', 'tt').replace('kaz', 'kk')  # TODO: make it customizable for all models
-    df['dst_lang'] = dst_lang.replace('mhr', 'chm').replace('tat', 'tt').replace('kaz', 'kk')
+    df['src_lang'] = src_lang.replace('mhr', 'mhr').replace('tat', 'tt').replace('kaz', 'kk')  # TODO: make it customizable for all models
+    df['dst_lang'] = dst_lang.replace('mhr', 'mhr').replace('tat', 'tt').replace('kaz', 'kk')
 
     batches = [batch.copy() for batch in batch_split(df, batch_size=8)]
     for i, batch in enumerate(tqdm(batches)):

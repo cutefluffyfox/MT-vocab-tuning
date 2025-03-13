@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from time import time
 from tqdm.auto import trange
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, NllbTokenizer
 from transformers.optimization import Adafactor
 from transformers import get_constant_schedule_with_warmup
 from scripts.helpers.yadisk_manager import recursive_upload
@@ -61,10 +61,11 @@ class BaseModel:
 
 
 class HFModel(BaseModel):
-    def __init__(self, hf_repo: str, convert_to_float16: bool = False, device: str = 'auto'):
+    def __init__(self, hf_repo: str, convert_to_float16: bool = False, device: str = 'auto', skip_initialization: bool = False):
         dtype = torch.float32 if not convert_to_float16 else torch.float16
-        self.tokenizer = AutoTokenizer.from_pretrained(hf_repo)
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(hf_repo, torch_dtype=dtype, device_map=device)
+        if not skip_initialization:
+            self.tokenizer = AutoTokenizer.from_pretrained(hf_repo)
+            self.model = AutoModelForSeq2SeqLM.from_pretrained(hf_repo, torch_dtype=dtype, device_map=device)
 
     def tokenize(self, texts: list[str], *args, **kwargs) -> dict:
         return self.tokenizer(texts, return_tensors="pt", padding=True, *args, **kwargs).to(self.model.device)
@@ -212,13 +213,24 @@ class Madlad400Model(HFModel):
 
 
 class NLLB200Model(HFModel):
-    def __init__(self, convert_to_float16: bool = True, device: str = 'auto'):
+    def __init__(self, convert_to_float16: bool = True, device: str = 'auto', skip_initialization: bool = False):
         super(NLLB200Model, self).__init__(
             'facebook/nllb-200-distilled-1.3B',
             convert_to_float16=convert_to_float16,
             device=device,
         )
         self.dst_lang: str = None
+
+    @staticmethod
+    def from_folder(model_path: str, tokenizer_path: str, convert_to_float16: bool = False, device: str = 'auto'):
+        dtype = torch.float32 if not convert_to_float16 else torch.float16
+        tokenizer = NllbTokenizer.from_pretrained(tokenizer_path)
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_path, torch_dtype=dtype, device_map=device)
+        nllb_model = NLLB200Model(convert_to_float16=convert_to_float16, device=device, skip_initialization=True)
+        nllb_model.model = model
+        nllb_model.tokenizer = tokenizer
+        return nllb_model
+
 
     def transform(self, texts: list[dict]) -> list[str]:
         self.dst_lang = self.__from_iso(texts[0]['dst_lang'])
@@ -233,16 +245,16 @@ class NLLB200Model(HFModel):
         return self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
     def __from_iso(self, lang: str):
-        if lang == 'en':
+        if lang in {'en', 'eng', 'en_Latn', 'eng_Lath'}:
             return 'eng_Latn'
-        elif lang == 'ru':
+        elif lang in {'ru', 'rus', 'ru_Cyrl', 'rus_Cyrl'}:
             return 'rus_Cyrl'
-        elif lang == 'tat' or lang == 'tt':
+        elif lang in {'tt', 'tat', 'tt_Cyrl', 'tat_Cyrl'}:
             return 'tat_Cycl'
-        elif lang == 'kaz' or lang == 'kk':
+        elif lang in {'kk', 'kaz', 'kk_Cyrl', 'kaz_Cyrl'}:
             return 'kaz_Cyrl'
-        elif lang == 'mhr':
-            raise ValueError('Language: mhr is not supported by NLLB-200')
+        elif lang in {'mhr', 'chm', 'mhr_Cyrl', 'chm_Cyrl'}:
+            return 'mhr_Cyrl'
         else:
             raise NotImplementedError(f'Language `{lang}` not supported yet.')
 
