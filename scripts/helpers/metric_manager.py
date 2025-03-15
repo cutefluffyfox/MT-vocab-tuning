@@ -1,10 +1,23 @@
 import numpy as np
 import evaluate
+from transformers import logging
+from transformers import pipeline
+
+from scripts.helpers.model_manager import BaseModel
 
 
 class Metric:
-    def __call__(self, sources: list[str], references: list[str], translations: list[str], *args, **kwargs):
+    metric_name: str = 'base_metric_class'
+    supported_langs: set or str = 'all'
+
+    def __call__(self, sources: list[str], targets: list[str], translations: list[str], *args, **kwargs):
         pass
+
+    def lang_is_supported(self, lang: str) -> bool:
+        if self.supported_langs == 'all':
+            return True
+        return lang in self.supported_langs
+
 
 
 class HFMetric(Metric):
@@ -18,6 +31,50 @@ class HFMetric(Metric):
 
     def extract_score(self, result: dict) -> float:
         raise NotImplementedError('Each HFMetric should specify custom extract_score function, otherwise set `score_only = False`')
+
+
+class HFMetricModel(Metric):
+    def __init__(self, model_repo: str, model_pipeline: str, keep_loaded: bool = False):
+        self.metric_name = self.__class__.__name__
+
+        self.model_repo = model_repo
+        self.model_pipeline = model_pipeline
+        self.keep_loaded = keep_loaded
+        self.pipe = None
+        logging.set_verbosity_error()
+
+    def load_model(self):
+        self.pipe = pipeline(self.model_pipeline, model=self.model_repo)
+
+    def unload_model(self):
+        del self.pipe
+        self.pipe = None
+        BaseModel.cleanup()
+
+    def __call__(self, sources: list[str], targets: list[str], translations: list[str], score_only: bool = True, *args, **kwargs):
+        if self.pipe is None:
+            self.load_model()
+
+        res = self.pipe(translations)
+
+        if not self.keep_loaded:
+            self.unload_model()
+
+        return self.extract_score(res) if score_only else res
+
+    def extract_score(self, result: dict) -> float:
+        raise NotImplementedError('Each HFMetricModel should specify custom extract_score function, otherwise set `score_only = False`')
+
+
+class FluencyRU(HFMetricModel):
+    supported_langs = {'ru', 'rus'}
+
+    def __init__(self, keep_loaded: bool = False):
+        super().__init__(model_repo='RussianNLP/ruRoBERTa-large-rucola', model_pipeline='text-classification', keep_loaded=keep_loaded)
+        self.metric_name = 'fluency-ru'
+
+    def extract_score(self, result: list[dict]) -> float:
+        return float(np.mean([row['score'] for row in result]))
 
 
 class BLEU(HFMetric):

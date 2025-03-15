@@ -27,7 +27,8 @@ def recursive_upload(client: yadisk.Client, from_dir: str, to_dir: str):
 
 def download_model(client: yadisk.Client, experiment: str, folder: str, checkpoint: str='final'):
     model_files = {'config.json', 'generation_config.json', 'model.safetensors'}
-    tokenizer_files = {'special_tokens_map.json', 'sentencepiece.bpe.model', 'tokenizer_config.json', 'added_tokens.json'}
+    tokenizer_files_new = {'special_tokens_map.json', 'sentencepiece.bpe.model', 'tokenizer_config.json', 'added_tokens.json'}
+    tokenizer_files_old = {'special_tokens_map.json', 'sentencepiece.bpe.model', 'tokenizer_config.json', 'tokenizer.json'}
 
     assert client.exists(experiment), 'Experiment not found on Ya.Disk'
 
@@ -48,17 +49,24 @@ def download_model(client: yadisk.Client, experiment: str, folder: str, checkpoi
         # print(len(set([file_obj.name for file_obj in client.listdir(model_path)]) & model_files) == len(model_files))
         # print(client.exists(tokenizer_path))
         # print(len(set([file_obj.name for file_obj in client.listdir(tokenizer_path)]) & tokenizer_files) == len(tokenizer_files))
+        if not client.exists(model_path):
+            continue
+        if not len(set([file_obj.name for file_obj in client.listdir(model_path)]) & model_files) == len(model_files):
+            continue
+        if not client.exists(tokenizer_path):
+            continue
         if (
-                client.exists(model_path) and
-                len(set([file_obj.name for file_obj in client.listdir(model_path)]) & model_files) == len(model_files) and
-                client.exists(tokenizer_path) and
-                len(set([file_obj.name for file_obj in client.listdir(tokenizer_path)]) & tokenizer_files) == len(tokenizer_files)
+            not len(set([file_obj.name for file_obj in client.listdir(tokenizer_path)]) & tokenizer_files_old) == len(tokenizer_files_old)
+            and not len(set([file_obj.name for file_obj in client.listdir(tokenizer_path)]) & tokenizer_files_new) == len(tokenizer_files_new)
         ):
-            parsed[int(iteration)] = {
-                'iteration': int(iteration),
-                'model': model_path,
-                'tokenizer': tokenizer_path
-            }
+            continue
+
+        parsed[int(iteration)] = {
+            'iteration': int(iteration),
+            'model': model_path,
+            'tokenizer': tokenizer_path,
+            'tokenizer_type': 'old' if 'tokenizer.json' in set([file_obj.name for file_obj in client.listdir(tokenizer_path)]) else 'new',
+        }
 
     if checkpoint in {'final', 'last', 'full'}:
         checkpoint = max(parsed.keys())
@@ -72,7 +80,13 @@ def download_model(client: yadisk.Client, experiment: str, folder: str, checkpoi
     os.makedirs(os.path.join(folder, 'model'), exist_ok=True)
     os.makedirs(os.path.join(folder, 'tokenizer'), exist_ok=True)
 
+    for file in os.listdir(os.path.join(folder, 'model')):
+        os.remove(os.path.join(folder, 'model', file))
+    for file in os.listdir(os.path.join(folder, 'tokenizer')):
+        os.remove(os.path.join(folder, 'tokenizer', file))
+
     # download all files
+    tokenizer_files = tokenizer_files_old if parsed[checkpoint]['tokenizer_type'] == 'old' else tokenizer_files_new
     for file_type in tqdm(tokenizer_files, desc='Downloading tokenizer'):
         client.download(f"{parsed[checkpoint]['tokenizer']}/{file_type}", os.path.join(folder, 'tokenizer', file_type))
     # download all tokenizer files
