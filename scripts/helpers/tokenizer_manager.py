@@ -123,8 +123,8 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
 
 def update_nllb_tokenizer(
     old_tokenizer: NllbTokenizer,
-    new_spm_path: str,
     new_lang_codes: list[str],
+    new_spm_path: str = None,
 ) -> NllbTokenizer:
 
     TKN_DIR = "old_tokenizer"  # todo: make it temporary
@@ -144,8 +144,9 @@ def update_nllb_tokenizer(
     # this contains added tokens: language codes and mask
     os.remove(f"{TKN_DIR}/added_tokens.json")
     os.remove(f"{TKN_DIR}/special_tokens_map.json")
-    os.remove(f"{TKN_DIR}/sentencepiece.bpe.model")
-    shutil.copy(new_spm_path, f"{TKN_DIR}/sentencepiece.bpe.model")
+    if new_spm_path is not None:
+        os.remove(f"{TKN_DIR}/sentencepiece.bpe.model")
+        shutil.copy(new_spm_path, f"{TKN_DIR}/sentencepiece.bpe.model")
 
     new_tokenizer = NllbTokenizer.from_pretrained(
         TKN_DIR,
@@ -157,28 +158,30 @@ def update_nllb_tokenizer(
     return new_tokenizer
 
 
-def add_new_full_language(data: pd.DataFrame, lang: str, model_name: str):
-    all_texts, required_chars = preprocess_corpora(
-        data=data,
-        lang=lang,
-    )
-    train_sentencepiece(
-        all_texts=all_texts,
-        required_chars=required_chars,
-        tokenizer_prefix=f'smp_{lang}_16k'
-    )
-    merge_nllb_new_tokenizers(
-        model_name=model_name,
-        tokenizer_prefix=f'smp_{lang}_16k',
-        new_tokenizer_name=f'nllb_{lang}'
-    )
+def add_new_full_language(lang: str, model_name: str, data: pd.DataFrame = None, add_token_lang: bool = True):
+    if data is not None:
+        all_texts, required_chars = preprocess_corpora(
+            data=data,
+            lang=lang,
+        )
+        train_sentencepiece(
+            all_texts=all_texts,
+            required_chars=required_chars,
+            tokenizer_prefix=f'smp_{lang}_16k'
+        )
+
+        merge_nllb_new_tokenizers(
+            model_name=model_name,
+            tokenizer_prefix=f'smp_{lang}_16k',
+            new_tokenizer_name=f'nllb_{lang}'
+        )
 
     # load old tokenizer for sanity check
     tokenizer_old = NllbTokenizer.from_pretrained(model_name)
     tokenizer = update_nllb_tokenizer(
         old_tokenizer=tokenizer_old,
-        new_spm_path=f'spm_nllb_{lang}.model',
-        new_lang_codes=[f'{lang}_Cyrl']
+        new_spm_path=None if (data is None) else f'spm_nllb_{lang}.model',
+        new_lang_codes=[f'{lang}_Cyrl'] if add_token_lang else [],
     )
 
     # print len and last 2 tokens (should be some lang and <mask>)
