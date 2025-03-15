@@ -198,6 +198,12 @@ def add_new_full_language(lang: str, model_name: str, data: pd.DataFrame = None,
 
 
 def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, lang: str, similar_lang: str):
+    # sanity check on input parameters
+    if similar_lang.startswith(lang):
+        similar_lang = f"{lang}_Cyrl"
+    assert '_' not in lang, 'Parameter `lang` should be Cyrillic language without language script'
+    assert '_' in similar_lang, 'Parameter `similar_lang` should specify language script'
+
     # unload model from cuda (otherwise code will fail due to device map)
     device = model.device
     model.to('cpu')
@@ -215,8 +221,7 @@ def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, l
     # copy embeddings from old token positions to new
     model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(moved_tokens)] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(moved_tokens)]
 
-    # set language family
-    model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(f'{lang}_Cyrl')] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(f'{similar_lang}_Cyrl')]
+    model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(f'{lang}_Cyrl')] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(similar_lang)]
 
     # sanity check on index position
     added_tokens_idx = tokenizer.convert_tokens_to_ids(list(added_vocab))
