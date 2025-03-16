@@ -8,10 +8,10 @@ from scripts.helpers.path_manager import DataManager
 from scripts.helpers.batch_processor import batch_split
 
 
-def benchmark(model: BaseModel, direction: str):
+def benchmark(model: BaseModel, direction: str, logs_name: str = 'flores-dev.txt'):
     # make logs folder & file
     dm = DataManager()
-    logs_file = dm.get_path('benchmark', direction, 'flores-dev.txt')
+    logs_file = dm.get_path('benchmark', direction, logs_name)
     with open(logs_file, 'w', encoding='UTF-8') as file:  # remove previous results (if exist)
         pass
 
