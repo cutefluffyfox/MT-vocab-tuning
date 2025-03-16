@@ -250,7 +250,10 @@ class NLLB200Model(HFModel):
 
 
     def transform(self, texts: list[dict]) -> list[str]:
-        self.dst_lang = self.__from_iso(texts[0]['dst_lang'])
+        if 'break_bos_token' in dir(self) and self.break_bos_token:
+            self.dst_lang = texts[0]['dst_lang']
+        else:
+            self.dst_lang = self.from_iso(texts[0]['dst_lang'])
         return [f"{row['text']}" for row in texts]
 
     def translate(self, input_ids: dict, max_tokens: int = 100, *args, **kwargs) -> list[str]:
@@ -260,7 +263,3 @@ class NLLB200Model(HFModel):
             forced_bos_token_id=self.tokenizer.convert_tokens_to_ids(self.dst_lang)
         )
         return self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-
-    def update_tokenizer(self):
-        pass
-
