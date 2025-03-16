@@ -44,6 +44,21 @@ class BaseModel:
         raise NotImplementedError('`.translate` method should be implemented in derived class.')
 
     @staticmethod
+    def from_iso(lang: str):
+        if lang in {'en', 'eng', 'en_Latn', 'eng_Latn'}:
+            return 'eng_Latn'
+        elif lang in {'ru', 'rus', 'ru_Cyrl', 'rus_Cyrl'}:
+            return 'rus_Cyrl'
+        elif lang in {'tt', 'tat', 'tt_Cyrl', 'tat_Cyrl'}:
+            return 'tat_Cycl'
+        elif lang in {'kk', 'kaz', 'kk_Cyrl', 'kaz_Cyrl'}:
+            return 'kaz_Cyrl'
+        elif lang in {'mhr', 'chm', 'mhr_Cyrl', 'chm_Cyrl'}:
+            return 'mhr_Cyrl'
+        else:
+            raise NotImplementedError(f'Language `{lang}` not supported yet.')
+
+    @staticmethod
     def add_lang_info_columns(texts: list[str], src_lang: str, dst_lang: str) -> list[dict]:
         output = []
         for text in texts:
@@ -139,6 +154,8 @@ class HFModel(BaseModel):
                 break
             batch = next(batch_generator)
             xx, yy, lang1, lang2 = batch
+            # normalize language token, otherwise model would learn different 2 token (fixed 16.03!!!)
+            lang1, lang2 = self.from_iso(lang1), self.from_iso(lang2)
             try:
                 self.tokenizer.src_lang = lang1
                 x = self.tokenizer(xx, return_tensors='pt', padding=True, truncation=True, max_length=max_length).to(self.model.device)
@@ -243,20 +260,6 @@ class NLLB200Model(HFModel):
             forced_bos_token_id=self.tokenizer.convert_tokens_to_ids(self.dst_lang)
         )
         return self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-
-    def __from_iso(self, lang: str):
-        if lang in {'en', 'eng', 'en_Latn', 'eng_Lath'}:
-            return 'eng_Latn'
-        elif lang in {'ru', 'rus', 'ru_Cyrl', 'rus_Cyrl'}:
-            return 'rus_Cyrl'
-        elif lang in {'tt', 'tat', 'tt_Cyrl', 'tat_Cyrl'}:
-            return 'tat_Cycl'
-        elif lang in {'kk', 'kaz', 'kk_Cyrl', 'kaz_Cyrl'}:
-            return 'kaz_Cyrl'
-        elif lang in {'mhr', 'chm', 'mhr_Cyrl', 'chm_Cyrl'}:
-            return 'mhr_Cyrl'
-        else:
-            raise NotImplementedError(f'Language `{lang}` not supported yet.')
 
     def update_tokenizer(self):
         pass
