@@ -2,6 +2,7 @@ import numpy as np
 import evaluate
 from transformers import logging
 from transformers import pipeline
+from collections import defaultdict
 
 from scripts.helpers.model_manager import BaseModel
 
@@ -31,6 +32,36 @@ class HFMetric(Metric):
 
     def extract_score(self, result: dict) -> float:
         raise NotImplementedError('Each HFMetric should specify custom extract_score function, otherwise set `score_only = False`')
+
+
+class HFMetricBootstrap(HFMetric):
+    def __init__(self, metric_name: str, bootstrap: int = 300, **kwargs):
+        super().__init__(metric_name)
+        self.bootstrap = bootstrap
+
+    def __call__(self, sources: list[str], targets: list[str], translations: list[str], score_only: bool = True, *args, **kwargs):
+
+        res = self.metric.compute(predictions=targets, references=translations)
+        return self.extract_score(res) if score_only else res
+
+    @staticmethod
+    def __bootstrap_all(sources: list[str] or None, targets: list[str] or None, translations: list[str] or None, n: int):
+        max_len = max(
+            0 if sources is None else len(sources),
+            0 if targets is None else len(targets),
+            0 if translations is None else len(translations),
+        )
+        sources = [None]*max_len if sources is None else sources
+        targets = [None]*max_len if targets is None else targets
+        translations = [None]*max_len if translations is None else translations
+        for _ in range(n):
+            bootstrapped = defaultdict(list)
+            for _ in range(max_len):
+                idx = np.random.randint(0, max_len)
+                bootstrapped['sources'].append(sources[idx])
+                bootstrapped['targets'].append(sources[idx])
+                bootstrapped['translations'].append(sources[idx])
+
 
 
 class HFMetricModel(Metric):
@@ -83,6 +114,13 @@ class BLEU(HFMetric):
 
     def extract_score(self, result: dict) -> float:
         return result['bleu']
+
+
+class BLEUConf(HFMetric):
+    def __init__(self):
+        super().__init__('bleu')
+
+
 
 
 class BLEURT(HFMetric):
