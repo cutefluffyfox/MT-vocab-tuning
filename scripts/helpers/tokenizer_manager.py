@@ -129,7 +129,7 @@ def update_nllb_tokenizer(
 
     TKN_DIR = "old_tokenizer"  # todo: make it temporary
     old_tokenizer.save_pretrained(TKN_DIR)
-
+    
     with open(f"{TKN_DIR}/tokenizer_config.json", "r") as f:
         cfg = json.load(f)
     cfg["added_tokens_decoder"] = {
