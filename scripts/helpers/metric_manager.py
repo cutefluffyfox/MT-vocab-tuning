@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.stats as st
 import evaluate
 from transformers import logging
 from transformers import pipeline
@@ -11,13 +12,31 @@ class Metric:
     metric_name: str = 'base_metric_class'
     supported_langs: set or str = 'all'
 
-    def __call__(self, sources: list[str], targets: list[str], translations: list[str], *args, **kwargs):
+    def __call__(self, sources: list[str], targets: list[str], translations: list[str], bootstrap: int or None = None, confidence: float = 0.95, *args, **kwargs):
         pass
 
     def lang_is_supported(self, lang: str) -> bool:
         if self.supported_langs == 'all':
             return True
         return lang in self.supported_langs
+
+    @staticmethod
+    def bootstrap_input_data(sources: list[str], targets: list[str], translations: list[str], bootstrap_n: int or None = 300):
+        if bootstrap_n is None or not isinstance(bootstrap_n, int) or bootstrap_n <= 1:
+            yield sources, targets, translations
+            return
+
+        assert len(sources) == len(targets) == len(translations), 'Input data is not equal length'
+        input_size = len(sources)
+
+        for _ in range(bootstrap_n):
+            batch = defaultdict(list)
+            for sample in np.random.randint(0, input_size, input_size):
+                batch['sources'].append(sources[sample])
+                batch['targets'].append(targets[sample])
+                batch['translations'].append(translations[sample])
+            yield batch['sources'], batch['targets'], batch['translations']
+        return
 
 
 
@@ -26,42 +45,29 @@ class HFMetric(Metric):
         self.metric = evaluate.load(metric_name, **kwargs)
         self.metric_name = metric_name
 
-    def __call__(self, sources: list[str], targets: list[str], translations: list[str], score_only: bool = True, *args, **kwargs):
-        res = self.metric.compute(predictions=targets, references=translations)
-        return self.extract_score(res) if score_only else res
-
-    def extract_score(self, result: dict) -> float:
-        raise NotImplementedError('Each HFMetric should specify custom extract_score function, otherwise set `score_only = False`')
-
-
-class HFMetricBootstrap(HFMetric):
-    def __init__(self, metric_name: str, bootstrap: int = 300, **kwargs):
-        super().__init__(metric_name)
-        self.bootstrap = bootstrap
-
-    def __call__(self, sources: list[str], targets: list[str], translations: list[str], score_only: bool = True, *args, **kwargs):
-
-        res = self.metric.compute(predictions=targets, references=translations)
-        return self.extract_score(res) if score_only else res
-
-    @staticmethod
-    def __bootstrap_all(sources: list[str] or None, targets: list[str] or None, translations: list[str] or None, n: int):
+    def __call__(self, sources: list[str], targets: list[str], translations: list[str], score_only: bool = True, bootstrap: int or None = None, confidence: float = 0.95, *args, **kwargs):
         max_len = max(
             0 if sources is None else len(sources),
             0 if targets is None else len(targets),
             0 if translations is None else len(translations),
         )
-        sources = [None]*max_len if sources is None else sources
-        targets = [None]*max_len if targets is None else targets
-        translations = [None]*max_len if translations is None else translations
-        for _ in range(n):
-            bootstrapped = defaultdict(list)
-            for _ in range(max_len):
-                idx = np.random.randint(0, max_len)
-                bootstrapped['sources'].append(sources[idx])
-                bootstrapped['targets'].append(sources[idx])
-                bootstrapped['translations'].append(sources[idx])
+        sources = [None] * max_len if sources is None else sources
+        targets = [None] * max_len if targets is None else targets
+        translations = [None] * max_len if translations is None else translations
 
+        results = []
+        for srcs, trgs, trns in self.bootstrap_input_data(sources, targets, translations, bootstrap_n=bootstrap):
+            res = self.metric.compute(predictions=trns, references=trgs)
+            results.append(self.extract_score(res) if score_only else res)
+        if len(results) == 1:
+            return results[0]
+        # calculate "expected" value (without bootstrap)
+        res = self.metric.compute(predictions=translations, references=targets)
+        score = self.extract_score(res) if score_only else res
+        return score, st.t.interval(confidence, len(results)-1, loc=np.mean(results), scale=st.sem(results))
+
+    def extract_score(self, result: dict) -> float:
+        raise NotImplementedError('Each HFMetric should specify custom extract_score function, otherwise set `score_only = False`')
 
 
 class HFMetricModel(Metric):
@@ -119,8 +125,6 @@ class BLEU(HFMetric):
 class BLEUConf(HFMetric):
     def __init__(self):
         super().__init__('bleu')
-
-
 
 
 class BLEURT(HFMetric):
