@@ -88,16 +88,33 @@ class HFMetricModel(Metric):
         self.pipe = None
         BaseModel.cleanup()
 
-    def __call__(self, sources: list[str], targets: list[str], translations: list[str], score_only: bool = True, *args, **kwargs):
+    def __call__(self, sources: list[str], targets: list[str], translations: list[str], score_only: bool = True, bootstrap: int or None = None, confidence: float = 0.95, *args, **kwargs):
         if self.pipe is None:
             self.load_model()
 
+        max_len = max(
+            0 if sources is None else len(sources),
+            0 if targets is None else len(targets),
+            0 if translations is None else len(translations),
+        )
+        sources = [None] * max_len if sources is None else sources
+        targets = [None] * max_len if targets is None else targets
+        translations = [None] * max_len if translations is None else translations
+
+        results = []
+        for srcs, trgs, trns in self.bootstrap_input_data(sources, targets, translations, bootstrap_n=bootstrap):
+            res = self.pipe(trns)
+            results.append(self.extract_score(res) if score_only else res)
+        if len(results) == 1:
+            return results[0]
+        # calculate "expected" value (without bootstrap)
         res = self.pipe(translations)
+        score = self.extract_score(res) if score_only else res
 
         if not self.keep_loaded:
             self.unload_model()
 
-        return self.extract_score(res) if score_only else res
+        return score, st.t.interval(confidence, len(results) - 1, loc=np.mean(results), scale=st.sem(results))
 
     def extract_score(self, result: dict) -> float:
         raise NotImplementedError('Each HFMetricModel should specify custom extract_score function, otherwise set `score_only = False`')
