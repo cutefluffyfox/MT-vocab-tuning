@@ -3,7 +3,6 @@ import json
 import requests
 import sentencepiece as spm
 from transformers import NllbTokenizer
-from sentencepiece import sentencepiece_model_pb2 as sp_pb2_model
 
 
 class TurkLandMorphTokenizer:
@@ -29,8 +28,16 @@ class TurkLandMorphTokenizer:
 
     def tokenize(self, text: str):
         tokens = []
+        was_fully_tokenizer: bool = False
         for piece in self.__pretokenize(text):
-            tokens.extend(self.__tokenize_word(piece))
+            piece_tokens, api_status = self.__tokenize_word(piece)
+            tokens.extend(piece_tokens)
+
+            if api_status and not was_fully_tokenizer:
+                # because API splits text by default, it is faster to make "raw" version beforehand
+                self.__send_api_request(text)
+                was_fully_tokenizer = True
+
         return tokens
 
     @staticmethod
@@ -91,9 +98,11 @@ class TurkLandMorphTokenizer:
         with open(file_name, 'w') as file:
             json.dump(self.word_to_tokens_map, file, ensure_ascii=True, indent=4)
     
-    def __tokenize_word(self, word: str) -> list[str]:
+    def __tokenize_word(self, word: str) -> (list[str], bool):
+        was_api_request: bool = False
         if self.word_to_tokens_map.get(self.__normalize_token(word)) is None:
             self.__send_api_request(self.__normalize_token(word))
+            was_api_request = True
 
         tokens = self.word_to_tokens_map[self.__normalize_token(word)]
         token_separator = '$'
@@ -102,7 +111,7 @@ class TurkLandMorphTokenizer:
 
         if ''.join(tokens).lower() != self.__normalize_token(word):
             # print(f'WARN: API did not return correct format for the word `{word}` : `{tokens}`')
-            return [word]
+            return [word], was_api_request
 
         word_len = len(word)
         output = ['']
@@ -118,12 +127,4 @@ class TurkLandMorphTokenizer:
                 output[-1] += word[ptr_formatted]
                 ptr_formatted += 1
 
-        return output
-
-
-morph = TurkLandMorphTokenizer()
-print(morph.tokenize('Hello world!'))
-print(morph.tokenize('Татарлар! Ике?'))
-print(morph.tokenize('телен генә'))
-print(morph.tokenize('Кояш төлкесе Төлке. Ул монстер эчәргә һәм кавын ашарга ярата. Нинди көлке төлке ул!'))
-morph.save_learned_map()
+        return output, was_api_request
