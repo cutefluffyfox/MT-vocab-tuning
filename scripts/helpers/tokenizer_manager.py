@@ -61,16 +61,18 @@ def preprocess_corpora(data: pd.DataFrame, lang: str):
     return all_texts, required_chars
 
 
-def train_sentencepiece(all_texts, required_chars, tokenizer_prefix: str = 'smp_tyvan_16k'):
+def train_sentencepiece(all_texts, required_chars, model_type: str, tokenizer_prefix: str = 'smp_tyvan_16k'):
     all_texts_file = 'tokenizer_texts_plain.txt'
 
     with open(all_texts_file, 'w', encoding='UTF-8') as f:
         for i, text in enumerate(all_texts):
             print(text, file=f)
 
+    assert model_type in {'bpe', 'unigram', 'char', 'word'}, "Invalid model type: expected {bpe, unigram, char, word}"
     spm.SentencePieceTrainer.train(
         input=all_texts_file,
         model_prefix=tokenizer_prefix,
+        model_type=model_type,  # default unigram
         vocab_size=2 ** 14,  # 16K
         character_coverage=1,
         num_threads=16,
@@ -158,23 +160,28 @@ def update_nllb_tokenizer(
     return new_tokenizer
 
 
-def add_new_full_language(lang: str, model_name: str, data: pd.DataFrame = None, add_token_lang: bool = True):
+def add_new_full_language(lang: str, model_name: str, tokenization_type: str, data: pd.DataFrame = None, add_token_lang: bool = True):
     if data is not None:
-        all_texts, required_chars = preprocess_corpora(
-            data=data,
-            lang=lang,
-        )
-        train_sentencepiece(
-            all_texts=all_texts,
-            required_chars=required_chars,
-            tokenizer_prefix=f'smp_{lang}_16k'
-        )
+        tokenization_type = tokenization_type.lower()
+        if tokenization_type in {'bpe', 'unigram'}:
+            all_texts, required_chars = preprocess_corpora(
+                data=data,
+                lang=lang,
+            )
+            train_sentencepiece(
+                all_texts=all_texts,
+                required_chars=required_chars,
+                tokenizer_prefix=f'smp_{lang}_16k',
+                model_type=tokenization_type,
+            )
 
-        merge_nllb_new_tokenizers(
-            model_name=model_name,
-            tokenizer_prefix=f'smp_{lang}_16k',
-            new_tokenizer_name=f'nllb_{lang}'
-        )
+            merge_nllb_new_tokenizers(
+                model_name=model_name,
+                tokenizer_prefix=f'smp_{lang}_16k',
+                new_tokenizer_name=f'nllb_{lang}'
+            )
+        else:
+            raise ValueError('Unsupported tokenization type')
 
     # load old tokenizer for sanity check
     tokenizer_old = NllbTokenizer.from_pretrained(model_name)
