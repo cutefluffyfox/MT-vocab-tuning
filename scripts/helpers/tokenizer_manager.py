@@ -204,7 +204,7 @@ def add_new_full_language(lang: str, model_name: str, tokenization_type: str, da
     return tokenizer
 
 
-def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, lang: str, similar_lang: str):
+def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, lang: str, similar_lang: str, tactic: str):
     # sanity check on input parameters
     if similar_lang.startswith(lang):
         similar_lang = f"{lang}_Cyrl"
@@ -226,7 +226,9 @@ def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, l
     moved_tokens = [token for token in old_tokens if tokenizer_old.convert_tokens_to_ids(token) != tokenizer.convert_tokens_to_ids(token)]
 
     # copy embeddings from old token positions to new
+    new_weights = model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(moved_tokens)]
     model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(moved_tokens)] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(moved_tokens)]
+    model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(moved_tokens)] = new_weights  # copy uninitialized, otherwise weights won't be random anymore
 
     model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(f'{lang}_Cyrl')] = model.model.shared.weight.data[tokenizer_old.convert_tokens_to_ids(similar_lang)]
 
@@ -240,14 +242,21 @@ def initialize_new_model_emb(model_name: str, model, tokenizer: NllbTokenizer, l
     print('Amount of new tokens:', len(added_vocab))
     print(list(added_vocab)[:15])
 
-    for t in tqdm(added_vocab):
-        if t == f'{lang}_Cyrl':
-            continue
-        tt = tokenizer_old(t, add_special_tokens=False).input_ids
-        if len(tt) == 0:
-            print(f'empty token "{t}"/{tokenizer.convert_tokens_to_ids(t)}')
-            tt = [tokenizer_old.unk_token_id]
-        model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(t)] = model.model.shared.weight.data[tt].mean(0)
+    if tactic == 'random':
+        pass  # done automatically
+    elif tactic == 'FVT':  # fast vocabulary transfer
+        for t in tqdm(added_vocab):
+            if t == f'{lang}_Cyrl':
+                continue
+            tt = tokenizer_old(t, add_special_tokens=False).input_ids
+            if len(tt) == 0:
+                print(f'empty token "{t}"/{tokenizer.convert_tokens_to_ids(t)}')
+                tt = [tokenizer_old.unk_token_id]
+            model.model.shared.weight.data[tokenizer.convert_tokens_to_ids(t)] = model.model.shared.weight.data[tt].mean(0)
+    elif tactic == 'TransTokenization':  # Trans-tokenization (again based on similar lang)
+        raise NotImplementedError('TransTokenization nor supported yet')
+    else:
+        raise ValueError('Unknown tokenization method')
 
     # load model back to needed device
     model.to(device)
