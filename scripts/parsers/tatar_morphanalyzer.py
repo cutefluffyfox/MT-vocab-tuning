@@ -9,7 +9,7 @@ class TurkLandMorphTokenizer:
     BASE_URL = 'http://modmorph.turklang.net/ru/platform/morph_analyzer'
     API_URL = 'http://modmorph.turklang.net/ru/platform/morph_analyzer/process_text'
 
-    def __init__(self, file_name: str = 'turk-morph-analyzer.json', pretokenizer_model: str = 'facebook/nllb-200-distilled-1.3B'):
+    def __init__(self, file_name: str = 'turk-morph-analyzer.json', pretokenizer_model: str = 'facebook/nllb-200-distilled-1.3B', go_to_api_for_new_word: bool = True):
         tokenizer = NllbTokenizer.from_pretrained(pretokenizer_model)
 
         self.spm = spm.SentencePieceProcessor()
@@ -18,6 +18,7 @@ class TurkLandMorphTokenizer:
         self.file_name: str = file_name
         self.word_to_tokens_map = dict()
         self.load_learned_map(self.file_name)
+        self.use_api = go_to_api_for_new_word
         
         self.session = requests.session()
         self.session.get(self.BASE_URL)
@@ -100,11 +101,14 @@ class TurkLandMorphTokenizer:
     
     def __tokenize_word(self, word: str) -> (list[str], bool):
         was_api_request: bool = False
-        if self.word_to_tokens_map.get(self.__normalize_token(word)) is None:
+        if self.use_api and self.word_to_tokens_map.get(self.__normalize_token(word)) is None:
             self.__send_api_request(self.__normalize_token(word))
             was_api_request = True
 
-        tokens = self.word_to_tokens_map[self.__normalize_token(word)]
+        if self.word_to_tokens_map.get(self.__normalize_token(word)) is None:
+            tokens = [self.__normalize_token(word)]
+        else:
+            tokens = self.word_to_tokens_map[self.__normalize_token(word)]
         token_separator = '$'
         tokens_combined = token_separator.join(tokens)
         ptr_formatted = ptr_tokens = 0
