@@ -94,6 +94,7 @@ def train_sentencepiece(all_texts: list[str], required_chars: str, model_type: s
 def train_morph_analyzer(all_texts: list[str], pretrained_tokenizer: BaseTokenizer, output_file: str = 'tt_tokens.json'):
     # calculate each token frequency
     cnt = Counter()
+    print('Test pretrained tokenizer', pretrained_tokenizer.tokenize('Татарстанда татарча сөйләшәләр. Төлке койрыгы!'))
     for line in tqdm(all_texts, desc='Tokenizing texts'):
         tokens = pretrained_tokenizer.tokenize(line)
         for token in tokens:
