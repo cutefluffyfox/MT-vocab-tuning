@@ -25,3 +25,13 @@ class DataManager(PathHolder):
         if create:
             self.create_folder(path)
         return path
+
+
+class ToeknizerManager(PathHolder):
+    dir_path = 'data'
+
+    def get_path(self, file_name: str, create: bool = True) -> str:
+        path = os.path.join(self.root_path, self.dir_path, 'tokenizer', file_name)
+        if create:
+            self.create_folder(path)
+        return path

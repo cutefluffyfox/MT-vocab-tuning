@@ -4,12 +4,16 @@ import requests
 import sentencepiece as spm
 from transformers import NllbTokenizer
 
+from scripts.helpers.path_manager import ToeknizerManager
+
 
 class TurkLandMorphTokenizer:
     BASE_URL = 'http://modmorph.turklang.net/ru/platform/morph_analyzer'
     API_URL = 'http://modmorph.turklang.net/ru/platform/morph_analyzer/process_text'
 
     def __init__(self, file_name: str = 'turk-morph-analyzer.json', pretokenizer_model: str = 'facebook/nllb-200-distilled-1.3B', go_to_api_for_new_word: bool = True):
+        self.dm = ToeknizerManager()
+
         tokenizer = NllbTokenizer.from_pretrained(pretokenizer_model)
 
         self.spm = spm.SentencePieceProcessor()
@@ -34,7 +38,7 @@ class TurkLandMorphTokenizer:
             piece_tokens, api_status = self.__tokenize_word(piece)
             tokens.extend(piece_tokens)
 
-            if api_status and not was_fully_tokenizer:
+            if self.use_api and api_status and not was_fully_tokenizer:
                 # because API splits text by default, it is faster to make "raw" version beforehand
                 self.__send_api_request(text)
                 was_fully_tokenizer = True
@@ -87,6 +91,7 @@ class TurkLandMorphTokenizer:
             return  # TODO: return all options, but for now ignore branching
 
     def load_learned_map(self, file_name):
+        file_name = self.dm.get_path(file_name)
         if not os.path.exists(file_name):
             return 
         
@@ -96,7 +101,8 @@ class TurkLandMorphTokenizer:
     def save_learned_map(self, file_name: str = None):
         if file_name is None:
             file_name = self.file_name
-        with open(file_name, 'w') as file:
+
+        with open(self.dm.get_path(file_name), 'w') as file:
             json.dump(self.word_to_tokens_map, file, ensure_ascii=True, indent=4)
     
     def __tokenize_word(self, word: str) -> (list[str], bool):
