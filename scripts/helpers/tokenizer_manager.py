@@ -93,7 +93,6 @@ def train_sentencepiece(all_texts: list[str], required_chars: str, model_type: s
 def train_morph_analyzer(all_texts: list[str], pretrained_tokenizer: BaseTokenizer, output_file: str = 'tt_tokens.json'):
     # calculate each token frequency
     cnt = Counter()
-    print('Test pretrained tokenizer', pretrained_tokenizer.tokenize('Татарстанда татарча сөйләшәләр. Төлке койрыгы!'))
     for line in tqdm(all_texts, desc='Tokenizing texts'):
         tokens = pretrained_tokenizer.tokenize(line)
         for token in tokens:
@@ -102,6 +101,7 @@ def train_morph_analyzer(all_texts: list[str], pretrained_tokenizer: BaseTokeniz
     # get top frequent
     vocab_size = 2 ** 14
     most_common_tokens = [token for token, freq in cnt.most_common(vocab_size)]
+    print('Len of most_common_tokens:', len(most_common_tokens))
 
     with open(output_file, 'w') as file:
         json.dump(most_common_tokens, fp=file)
@@ -114,6 +114,7 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
 
         with open(tokenizer_prefix, 'r') as file:
             tokens = json.load(fp=file)
+            print('Raw tokens amount:', len(tokens))
 
         for piece in tokens:
             new_p = sp_pb2_model.ModelProto().SentencePiece()

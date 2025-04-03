@@ -127,12 +127,6 @@ class TurkLandMorphTokenizer(BaseTokenizer):
         word_len = len(word)
         output = ['']
         while ptr_formatted < word_len:
-            if ptr_tokens >= len(tokens_combined):
-                print(word)
-                print(self.__normalize_token(word))
-                print(tokens)
-                print(tokens_combined)
-                print(output)
             if tokens_combined[ptr_tokens] == token_separator:
                 output.append('')
                 ptr_tokens += 1
