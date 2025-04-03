@@ -116,7 +116,7 @@ class TurkLandMorphTokenizer(BaseTokenizer):
             tokens = [self.__normalize_token(word)]
         else:
             tokens = self.word_to_tokens_map[self.__normalize_token(word)]
-        token_separator = '$'
+        token_separator = '\uF000'  # private use area (1st symbol)
         tokens_combined = token_separator.join(tokens)
         ptr_formatted = ptr_tokens = 0
 
