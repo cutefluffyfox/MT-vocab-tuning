@@ -21,7 +21,6 @@ from scripts.parsers.base_tokenizer import BaseTokenizer
 from scripts.parsers.tatar_morphanalyzer import TurkLandMorphTokenizer
 
 
-
 def get_non_printing_char_replacer(replace_by: str = " "):
     non_printable_map = {
         ord(c): replace_by
@@ -219,6 +218,7 @@ def add_new_full_language(lang: str, model_name: str, tokenization_type: str, da
                     pretokenizer_model=model_name,
                     go_to_api_for_new_word=False,
                 )
+                print('Pretokenized size:', len(tokenizer.word_to_tokens_map))
             else:
                 raise NotImplementedError(f'Language `{lang}` does not have MorphTokenization yet')
 

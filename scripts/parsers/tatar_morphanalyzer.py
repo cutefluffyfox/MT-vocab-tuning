@@ -127,6 +127,12 @@ class TurkLandMorphTokenizer(BaseTokenizer):
         word_len = len(word)
         output = ['']
         while ptr_formatted < word_len:
+            if ptr_tokens >= len(tokens_combined):
+                print(word)
+                print(self.__normalize_token(word))
+                print(tokens)
+                print(tokens_combined)
+                print(output)
             if tokens_combined[ptr_tokens] == token_separator:
                 output.append('')
                 ptr_tokens += 1
@@ -139,3 +145,7 @@ class TurkLandMorphTokenizer(BaseTokenizer):
                 ptr_formatted += 1
 
         return output, was_api_request
+
+
+t = TurkLandMorphTokenizer(go_to_api_for_new_word=False)
+print(t.tokenize('Герман сугышы турында, шулай ук элекке сугышлар турында (төрек, япон сугышлары) авылда чыккан, яки шул авылдан киткән солдатлар тарафыннан чыгарылган нинди “сугыш бәетләре” бар?'))
