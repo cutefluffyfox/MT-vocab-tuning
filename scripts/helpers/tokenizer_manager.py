@@ -17,6 +17,9 @@ from transformers import NllbTokenizer
 from transformers.models.nllb.tokenization_nllb import FAIRSEQ_LANGUAGE_CODES
 
 from scripts.helpers.model_manager import BaseModel
+from scripts.parsers.base_tokenizer import BaseTokenizer
+from scripts.parsers.tatar_morphanalyzer import TurkLandMorphTokenizer
+
 
 
 def get_non_printing_char_replacer(replace_by: str = " "):
@@ -61,7 +64,7 @@ def preprocess_corpora(data: pd.DataFrame, lang: str):
     return all_texts, required_chars
 
 
-def train_sentencepiece(all_texts, required_chars, model_type: str, tokenizer_prefix: str = 'smp_tyvan_16k'):
+def train_sentencepiece(all_texts: list[str], required_chars: str, model_type: str, tokenizer_prefix: str = 'smp_tyvan_16k'):
     all_texts_file = 'tokenizer_texts_plain.txt'
 
     with open(all_texts_file, 'w', encoding='UTF-8') as f:
@@ -88,11 +91,44 @@ def train_sentencepiece(all_texts, required_chars, model_type: str, tokenizer_pr
     )
 
 
+def train_morph_analyzer(all_texts: list[str], pretrained_tokenizer: BaseTokenizer, output_file: str = 'tt_tokens.json'):
+    # calculate each token frequency
+    cnt = Counter()
+    for line in tqdm(all_texts, desc='Tokenizing texts'):
+        tokens = pretrained_tokenizer.tokenize(line)
+        for token in tokens:
+            cnt[token] += 1
+
+    # get top frequent
+    vocab_size = 2 ** 14
+    most_common_tokens = [token for token, freq in cnt.most_common(vocab_size)]
+
+    with open(output_file, 'w') as file:
+        json.dump(most_common_tokens, fp=file)
+
+
 def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokenizer_name: str):
-    # reading the NLLB and the New sentencepiece models into a native format
-    sp_trained = spm.SentencePieceProcessor(model_file=f'{tokenizer_prefix}.model')
-    added_spm = sp_pb2_model.ModelProto()
-    added_spm.ParseFromString(sp_trained.serialized_model_proto())
+    # if it is raw tokens -> create new SentencePieceProcessor
+    if tokenizer_prefix.endswith('.json'):
+        added_spm = sp_pb2_model.ModelProto()
+
+        with open(tokenizer_prefix, 'r') as file:
+            tokens = json.load(fp=file)
+
+        for piece in tokens:
+            new_p = sp_pb2_model.ModelProto().SentencePiece()
+
+            # set new score to zero
+            new_p.piece = piece
+            new_p.score = 0
+
+            added_spm.pieces.append(new_p)
+    # otherwise read in native format
+    else:
+        # reading the NLLB and the New sentencepiece models into a native format
+        sp_trained = spm.SentencePieceProcessor(model_file=f'{tokenizer_prefix}.model')
+        added_spm = sp_pb2_model.ModelProto()
+        added_spm.ParseFromString(sp_trained.serialized_model_proto())
 
     tokenizer = NllbTokenizer.from_pretrained(model_name)
 
@@ -163,25 +199,44 @@ def update_nllb_tokenizer(
 def add_new_full_language(lang: str, model_name: str, tokenization_type: str, data: pd.DataFrame = None, add_token_lang: bool = True):
     if data is not None:
         tokenization_type = tokenization_type.lower()
+        all_texts, required_chars = preprocess_corpora(
+            data=data,
+            lang=lang,
+        )
+
         if tokenization_type in {'bpe', 'unigram'}:
-            all_texts, required_chars = preprocess_corpora(
-                data=data,
-                lang=lang,
-            )
+            tokenizer_prefix = f'smp_{lang}_16k'
             train_sentencepiece(
                 all_texts=all_texts,
                 required_chars=required_chars,
-                tokenizer_prefix=f'smp_{lang}_16k',
+                tokenizer_prefix=tokenizer_prefix,
                 model_type=tokenization_type,
             )
+        elif tokenization_type == 'morph':
+            if lang.lower() in {'tt', 'tat'}:
+                tokenizer = TurkLandMorphTokenizer(
+                    pretokenizer_model=model_name,
+                    go_to_api_for_new_word=False,
+                )
+            else:
+                raise NotImplementedError(f'Language `{lang}` does not have MorphTokenization yet')
 
-            merge_nllb_new_tokenizers(
-                model_name=model_name,
-                tokenizer_prefix=f'smp_{lang}_16k',
-                new_tokenizer_name=f'nllb_{lang}'
+            tokenizer_prefix = f'{lang}-raw_tokens.json'
+            train_morph_analyzer(
+                all_texts=all_texts,
+                pretrained_tokenizer=tokenizer,
+                output_file=tokenizer_prefix
             )
         else:
+            tokenizer_prefix = 'unknown'
             raise ValueError('Unsupported tokenization type')
+
+    # merge tokens
+    merge_nllb_new_tokenizers(
+        model_name=model_name,
+        tokenizer_prefix=tokenizer_prefix,
+        new_tokenizer_name=f'nllb_{lang}'
+    )
 
     # load old tokenizer for sanity check
     tokenizer_old = NllbTokenizer.from_pretrained(model_name)

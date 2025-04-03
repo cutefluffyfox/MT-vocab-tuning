@@ -5,9 +5,10 @@ import sentencepiece as spm
 from transformers import NllbTokenizer
 
 from scripts.helpers.path_manager import ToeknizerManager
+from scripts.parsers.base_tokenizer import BaseTokenizer
 
 
-class TurkLandMorphTokenizer:
+class TurkLandMorphTokenizer(BaseTokenizer):
     BASE_URL = 'http://modmorph.turklang.net/ru/platform/morph_analyzer'
     API_URL = 'http://modmorph.turklang.net/ru/platform/morph_analyzer/process_text'
 
