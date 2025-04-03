@@ -118,12 +118,11 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
 
         for piece in tokens:
             new_p = sp_pb2_model.ModelProto().SentencePiece()
-
             # set new score to zero
             new_p.piece = piece
             new_p.score = 0
-
             added_spm.pieces.append(new_p)
+        print('Added SPM pieces length:', len(added_spm.pieces))
     # otherwise read in native format
     else:
         # reading the NLLB and the New sentencepiece models into a native format
@@ -139,6 +138,7 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
     # adding the missing tokens to the NLLB sentencepiece model
     nllb_tokens_set = {p.piece for p in old_spm.pieces}
     print('Nllb tokens set len:', len(nllb_tokens_set))
+    print('Expected amount of new tokens:', len({p.piece for p in added_spm.pieces} - nllb_tokens_set))
     prev_min_score = old_spm.pieces[-1].score
 
     for p in added_spm.pieces:
