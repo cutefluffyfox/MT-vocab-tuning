@@ -180,6 +180,7 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
 
     processor = spm.SentencePieceProcessor()
     processor.LoadFromSerializedProto(old_spm.SerializeToString())
+    failed_to_pop = 0
 
     for row in edited_tokens:
         keyword = row['keyword']
@@ -191,11 +192,12 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
             current_min_score = 1e9
             for current_token in current_tokenization:
                 current_min_score = min(current_min_score, updated_tokens_map[current_token])
-                del updated_tokens_map[current_token]
+                failed_to_pop += int(updated_tokens_map.pop(current_token, None) is None)
 
             for new_token in new_tokens:
                 if new_token not in updated_tokens_map:
                     updated_tokens_map[new_token] = current_min_score
+    print('Failed to remove:', failed_to_pop)
     print('Tokenizer size after update:', len(updated_tokens_map))
 
     added_spm = sp_pb2_model.ModelProto()
