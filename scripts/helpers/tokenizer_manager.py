@@ -191,8 +191,9 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
             # ideally we need to somehow align old tokens to new, but this is kinda messy so for now we delete all non-good tokens
             current_min_score = 1e9
             for current_token in current_tokenization:
-                current_min_score = min(current_min_score, updated_tokens_map[current_token])
-                failed_to_pop += int(updated_tokens_map.pop(current_token, None) is None)
+                current_score = updated_tokens_map.pop(current_token, prev_min_score)
+                current_min_score = min(current_min_score, current_score)
+                failed_to_pop += int(current_score == prev_min_score)
 
             for new_token in new_tokens:
                 if new_token not in updated_tokens_map:
