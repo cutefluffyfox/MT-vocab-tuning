@@ -202,6 +202,8 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
     print('Tokenizer size after update:', len(updated_tokens_map))
 
     added_spm = sp_pb2_model.ModelProto()
+    added_spm.ParseFromString(tokenizer.sp_model.serialized_model_proto())
+    added_spm.pieces.clean()
     for token, score in updated_tokens_map.items():
         new_p = sp_pb2_model.ModelProto().SentencePiece()
         new_p.piece = token
