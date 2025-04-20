@@ -1,5 +1,6 @@
 import os
 import re
+import io
 import sys
 import json
 import shutil
@@ -174,12 +175,17 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
 
     # edit existing tokens to fit our needs
     updated_tokens_map = {p.piece: p.score for p in old_spm.pieces}
-    print('Tokenizer size before update:', updated_tokens_map)
+    print('Amount of tokens to update:', len(edited_tokens))
+    print('Tokenizer size before update:', len(updated_tokens_map))
+
+    processor = spm.SentencePieceProcessor()
+    processor.LoadFromSerializedProto(old_spm.serialized_model_proto())
+
     for row in edited_tokens:
         keyword = row['keyword']
         new_tokens = row['tokens']
 
-        current_tokenization = old_spm.encode_as_pieces(keyword)
+        current_tokenization = processor.encode_as_pieces(keyword)
         if current_tokenization != new_tokens:
             # ideally we need to somehow align old tokens to new, but this is kinda messy so for now we delete all non-good tokens
             current_min_score = 1e9
@@ -190,7 +196,7 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
             for new_token in new_tokens:
                 if new_token not in updated_tokens_map:
                     updated_tokens_map[new_token] = current_min_score
-    print('Tokenizer size after update:', updated_tokens_map)
+    print('Tokenizer size after update:', len(updated_tokens_map))
 
     added_spm = sp_pb2_model.ModelProto()
     for token, score in updated_tokens_map.items():
