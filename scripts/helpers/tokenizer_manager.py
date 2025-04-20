@@ -175,6 +175,7 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
 
     # edit existing tokens to fit our needs
     updated_tokens_map = {p.piece: p.score for p in old_spm.pieces}
+    updated_tokens_order = {p.piece: idx for idx, p in enumerate(old_spm.pieces)}
     print('Amount of tokens to update:', len(edited_tokens))
     print('Tokenizer size before update:', len(updated_tokens_map))
 
@@ -205,7 +206,7 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
     added_spm.ParseFromString(tokenizer.sp_model.serialized_model_proto())
     del added_spm.pieces[:]
 
-    for token, score in updated_tokens_map.items():
+    for token, score in sorted(updated_tokens_map.items(), key=lambda p: updated_tokens_order.get(p[0], 1e9)):
         new_p = sp_pb2_model.ModelProto().SentencePiece()
         new_p.piece = token
         # for all new tokens, I'll set a lower score (priority)
