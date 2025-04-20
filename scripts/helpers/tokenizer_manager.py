@@ -179,7 +179,7 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
     print('Tokenizer size before update:', len(updated_tokens_map))
 
     processor = spm.SentencePieceProcessor()
-    processor.LoadFromSerializedProto(old_spm.serialized_model_proto())
+    processor.LoadFromSerializedProto(old_spm.SerializeToString())
 
     for row in edited_tokens:
         keyword = row['keyword']
