@@ -31,13 +31,14 @@ class TurkLandMorphTokenizer(BaseTokenizer):
             self.session.get(self.BASE_URL)
             self.session.headers.update({'X-CSRFToken': self.session.cookies['csrftoken']})
 
-    def __pretokenize(self, text: str) -> list[str]:
+    @override
+    def pretokenize(self, text: str) -> list[str]:
         return self.spm.EncodeAsPieces(text)
 
     def tokenize(self, text: str):
         tokens = []
         was_fully_tokenizer: bool = False
-        for piece in self.__pretokenize(text):
+        for piece in self.pretokenize(text):
             piece_tokens, api_status = self.__tokenize_word(piece)
             tokens.extend(piece_tokens)
 

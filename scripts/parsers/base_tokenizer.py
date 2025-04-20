@@ -1,4 +1,7 @@
 class BaseTokenizer:
+    def pretokenize(self, text: str):
+        raise NotImplementedError('Tokenizers must have `.pretokenize` method implemented')
+
     def tokenize(self, text: str):
         raise NotImplementedError('Tokenizers must have `.tokenize` method implemented')
 
@@ -7,6 +10,3 @@ class BaseTokenizer:
 
     def load(self, file_name: str):
         raise NotImplementedError('Tokenizers must have `.load` method implemented')
-
-    def get_learned_mapping(self) -> dict[str, list[str]]:
-        raise NotImplementedError('Tokenizers must have `.get_learned_mapping` method implemented')

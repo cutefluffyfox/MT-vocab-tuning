@@ -91,9 +91,14 @@ def train_sentencepiece(all_texts: list[str], required_chars: str, model_type: s
 
 
 def train_morph_analyzer(all_texts: list[str], pretrained_tokenizer: BaseTokenizer, output_file: str = 'tt_tokens.json'):
-    # new behaviour idea: just write all learned mapping (TODO: filter out tokens not present in all_texts)
+    # new behaviour idea: just write all learned mapping
+    word_to_token_map = dict()
+    for text in all_texts:
+        for word in pretrained_tokenizer.pretokenize(text):
+            word_to_token_map[word] = pretrained_tokenizer.tokenize(word)
+
     non_trivial = []
-    for keyword, sub_tokens in pretrained_tokenizer.get_learned_mapping().items():
+    for keyword, sub_tokens in word_to_token_map.items():
         if len(sub_tokens) > 1:
             non_trivial.append({'keyword': keyword, 'tokens': sub_tokens})
 
