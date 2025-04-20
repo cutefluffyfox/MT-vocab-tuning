@@ -26,8 +26,9 @@ class TurkLandMorphTokenizer(BaseTokenizer):
         self.use_api = go_to_api_for_new_word
         
         self.session = requests.session()
-        self.session.get(self.BASE_URL)
-        self.session.headers.update({'X-CSRFToken': self.session.cookies['csrftoken']})
+        if self.use_api:
+            self.session.get(self.BASE_URL)
+            self.session.headers.update({'X-CSRFToken': self.session.cookies['csrftoken']})
 
     def __pretokenize(self, text: str) -> list[str]:
         return self.spm.EncodeAsPieces(text)

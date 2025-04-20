@@ -214,6 +214,8 @@ def add_new_full_language(lang: str, model_name: str, tokenization_type: str, da
                 model_type=tokenization_type,
             )
         elif tokenization_type == 'morph':
+            tokenizer_prefix = f'{lang}-raw_tokens.json'
+
             if lang.lower() in {'tt', 'tat'}:
                 tokenizer = TurkLandMorphTokenizer(
                     pretokenizer_model=model_name,
@@ -223,7 +225,6 @@ def add_new_full_language(lang: str, model_name: str, tokenization_type: str, da
             else:
                 raise NotImplementedError(f'Language `{lang}` does not have MorphTokenization yet')
 
-            tokenizer_prefix = f'{lang}-raw_tokens.json'
             train_morph_analyzer(
                 all_texts=all_texts,
                 pretrained_tokenizer=tokenizer,
