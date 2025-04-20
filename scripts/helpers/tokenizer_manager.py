@@ -91,38 +91,50 @@ def train_sentencepiece(all_texts: list[str], required_chars: str, model_type: s
 
 
 def train_morph_analyzer(all_texts: list[str], pretrained_tokenizer: BaseTokenizer, output_file: str = 'tt_tokens.json'):
-    # calculate each token frequency
-    cnt = Counter()
-    for line in tqdm(all_texts, desc='Tokenizing texts'):
-        tokens = pretrained_tokenizer.tokenize(line)
-        for token in tokens:
-            cnt[token] += 1
-
-    # get top frequent
-    vocab_size = 2 ** 14
-    most_common_tokens = [token for token, freq in cnt.most_common(vocab_size)]
-    print('Len of most_common_tokens:', len(most_common_tokens))
+    # new behaviour idea: just write all learned mapping (TODO: filter out tokens not present in all_texts)
+    non_trivial = []
+    for keyword, sub_tokens in pretrained_tokenizer.get_learned_mapping().items():
+        if len(sub_tokens) > 1:
+            non_trivial.append({'keyword': keyword, 'tokens': sub_tokens})
 
     with open(output_file, 'w') as file:
-        json.dump(most_common_tokens, fp=file)
+        json.dump(non_trivial, fp=file)
+
+    # old behaviour: calculate frequencies
+    # # calculate each token frequency
+    # cnt = Counter()
+    # for line in tqdm(all_texts, desc='Tokenizing texts'):
+    #     tokens = pretrained_tokenizer.tokenize(line)
+    #     for token in tokens:
+    #         cnt[token] += 1
+    #
+    # # get top frequent
+    # vocab_size = 2 ** 14
+    # most_common_tokens = [token for token, freq in cnt.most_common(vocab_size)]
+    # print('Len of most_common_tokens:', len(most_common_tokens))
+    #
+    # with open(output_file, 'w') as file:
+    #     json.dump(most_common_tokens, fp=file)
 
 
 def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokenizer_name: str):
+    # bade values: add nothing, edit nothing
+    added_spm = sp_pb2_model.ModelProto()
+    edited_tokens = list()
+
     # if it is raw tokens -> create new SentencePieceProcessor
     if tokenizer_prefix.endswith('.json'):
-        added_spm = sp_pb2_model.ModelProto()
-
         with open(tokenizer_prefix, 'r') as file:
-            tokens = json.load(fp=file)
-            print('Raw tokens amount:', len(tokens))
+            edited_tokens = json.load(fp=file)  # e.x. [{'keyword': 'лисичка', 'tokens': ['лис', 'ичк', 'а']}]
+            print('Tokens to edit:', len(edited_tokens))
 
-        for piece in tokens:
-            new_p = sp_pb2_model.ModelProto().SentencePiece()
-            # set new score to zero
-            new_p.piece = piece
-            new_p.score = 0
-            added_spm.pieces.append(new_p)
-        print('Added SPM pieces length:', len(added_spm.pieces))
+        # for mapping in token_map:
+            # new_p = sp_pb2_model.ModelProto().SentencePiece()
+            # # set new score to zero
+            # new_p.piece = piece
+            # new_p.score = 0
+            # added_spm.pieces.append(new_p)
+        # print('Added SPM pieces length:', len(added_spm.pieces))
     # otherwise read in native format
     else:
         # reading the NLLB and the New sentencepiece models into a native format
@@ -131,7 +143,6 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
         added_spm.ParseFromString(sp_trained.serialized_model_proto())
 
     tokenizer = NllbTokenizer.from_pretrained(model_name)
-
     old_spm = sp_pb2_model.ModelProto()
     old_spm.ParseFromString(tokenizer.sp_model.serialized_model_proto())
 
@@ -141,6 +152,7 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
     print('Expected amount of new tokens:', len({p.piece for p in added_spm.pieces} - nllb_tokens_set))
     prev_min_score = old_spm.pieces[-1].score
 
+    # add completely new tokens
     for p in added_spm.pieces:
         piece = p.piece
         if piece not in nllb_tokens_set:
@@ -154,6 +166,30 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
             # for all new tokens, I'll set a lower score (priority)
             new_p.score = p.score + prev_min_score
             old_spm.pieces.append(new_p)
+
+    # edit existing tokens to fit our needs
+    updated_tokens_map = {p.piece: p.score for p in old_spm.pieces}
+    for keyword, edited_tokens in edited_tokens.items():
+        current_tokenization = old_spm.encode_as_pieces(keyword)
+        if current_tokenization != edited_tokens:
+            # ideally we need to somehow align old tokens to new, but this is kinda messy so for now we delete all non-good tokens
+            current_min_score = 1e9
+            for current_token in current_tokenization:
+                current_min_score = min(current_min_score, updated_tokens_map[current_token])
+                del updated_tokens_map[current_token]
+
+            for new_token in edited_tokens:
+                if new_token not in updated_tokens_map:
+                    updated_tokens_map[new_token] = current_min_score
+
+    added_spm = sp_pb2_model.ModelProto()
+    for token, score in updated_tokens_map.items():
+        new_p = sp_pb2_model.ModelProto().SentencePiece()
+        new_p.piece = token
+        # for all new tokens, I'll set a lower score (priority)
+        new_p.score = score
+        added_spm.pieces.append(new_p)
+    old_spm = added_spm
 
     # saving the result to disk
     with open(f'spm_{new_tokenizer_name}.model', 'wb') as f:

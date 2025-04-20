@@ -3,6 +3,7 @@ import json
 import requests
 import sentencepiece as spm
 from transformers import NllbTokenizer
+from typing_extensions import override
 
 from scripts.helpers.path_manager import ToeknizerManager
 from scripts.parsers.base_tokenizer import BaseTokenizer
@@ -22,7 +23,7 @@ class TurkLandMorphTokenizer(BaseTokenizer):
 
         self.file_name: str = file_name
         self.word_to_tokens_map = dict()
-        self.load_learned_map(self.file_name)
+        self.load(self.file_name)
         self.use_api = go_to_api_for_new_word
         
         self.session = requests.session()
@@ -92,7 +93,8 @@ class TurkLandMorphTokenizer(BaseTokenizer):
             yield from TurkLandMorphTokenizer.construct_tokens_from_inner_html(child)
             return  # TODO: return all options, but for now ignore branching
 
-    def load_learned_map(self, file_name):
+    @override
+    def load(self, file_name: str):
         file_name = self.dm.get_path(file_name)
         if not os.path.exists(file_name):
             return 
@@ -100,7 +102,8 @@ class TurkLandMorphTokenizer(BaseTokenizer):
         with open(file_name, 'r') as file:
             self.word_to_tokens_map = json.load(file)
 
-    def save_learned_map(self, file_name: str = None):
+    @override
+    def save(self, file_name: str = None):
         if file_name is None:
             file_name = self.file_name
 
