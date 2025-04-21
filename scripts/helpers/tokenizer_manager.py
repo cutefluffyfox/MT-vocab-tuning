@@ -173,46 +173,46 @@ def merge_nllb_new_tokenizers(model_name: str, tokenizer_prefix: str, new_tokeni
             new_p.score = p.score + prev_min_score
             old_spm.pieces.append(new_p)
 
-    # edit existing tokens to fit our needs
-    updated_tokens_map = {p.piece: p.score for p in old_spm.pieces}
-    updated_tokens_order = {p.piece: idx for idx, p in enumerate(old_spm.pieces)}
-    print('Amount of tokens to update:', len(edited_tokens))
-    print('Tokenizer size before update:', len(updated_tokens_map))
-
-    processor = spm.SentencePieceProcessor()
-    processor.LoadFromSerializedProto(old_spm.SerializeToString())
-    failed_to_pop = 0
-
-    for row in edited_tokens:
-        keyword = row['keyword']
-        new_tokens = row['tokens']
-
-        current_tokenization = processor.encode_as_pieces(keyword)
-        if current_tokenization != new_tokens:
-            # ideally we need to somehow align old tokens to new, but this is kinda messy so for now we delete all non-good tokens
-            current_min_score = 1e9
-            for current_token in current_tokenization:
-                current_score = updated_tokens_map.pop(current_token, prev_min_score)
-                current_min_score = min(current_min_score, current_score)
-                failed_to_pop += int(current_score == prev_min_score)
-
-            for new_token in new_tokens:
-                if new_token not in updated_tokens_map:
-                    updated_tokens_map[new_token] = current_min_score
-    print('Failed to remove:', failed_to_pop)
-    print('Tokenizer size after update:', len(updated_tokens_map))
-
-    added_spm = sp_pb2_model.ModelProto()
-    added_spm.ParseFromString(tokenizer.sp_model.serialized_model_proto())
-    del added_spm.pieces[:]
-
-    for token, score in sorted(updated_tokens_map.items(), key=lambda p: updated_tokens_order.get(p[0], 1e9)):
-        new_p = sp_pb2_model.ModelProto().SentencePiece()
-        new_p.piece = token
-        # for all new tokens, I'll set a lower score (priority)
-        new_p.score = score
-        added_spm.pieces.append(new_p)
-    old_spm = added_spm
+    # # edit existing tokens to fit our needs
+    # updated_tokens_map = {p.piece: p.score for p in old_spm.pieces}
+    # updated_tokens_order = {p.piece: idx for idx, p in enumerate(old_spm.pieces)}
+    # print('Amount of tokens to update:', len(edited_tokens))
+    # print('Tokenizer size before update:', len(updated_tokens_map))
+    #
+    # processor = spm.SentencePieceProcessor()
+    # processor.LoadFromSerializedProto(old_spm.SerializeToString())
+    # failed_to_pop = 0
+    #
+    # for row in edited_tokens:
+    #     keyword = row['keyword']
+    #     new_tokens = row['tokens']
+    #
+    #     current_tokenization = processor.encode_as_pieces(keyword)
+    #     if current_tokenization != new_tokens:
+    #         # ideally we need to somehow align old tokens to new, but this is kinda messy so for now we delete all non-good tokens
+    #         current_min_score = 1e9
+    #         for current_token in current_tokenization:
+    #             current_score = updated_tokens_map.pop(current_token, prev_min_score)
+    #             current_min_score = min(current_min_score, current_score)
+    #             failed_to_pop += int(current_score == prev_min_score)
+    #
+    #         for new_token in new_tokens:
+    #             if new_token not in updated_tokens_map:
+    #                 updated_tokens_map[new_token] = current_min_score
+    # print('Failed to remove:', failed_to_pop)
+    # print('Tokenizer size after update:', len(updated_tokens_map))
+    #
+    # added_spm = sp_pb2_model.ModelProto()
+    # added_spm.ParseFromString(tokenizer.sp_model.serialized_model_proto())
+    # del added_spm.pieces[:]
+    #
+    # for token, score in sorted(updated_tokens_map.items(), key=lambda p: updated_tokens_order.get(p[0], 1e9)):
+    #     new_p = sp_pb2_model.ModelProto().SentencePiece()
+    #     new_p.piece = token
+    #     # for all new tokens, I'll set a lower score (priority)
+    #     new_p.score = score
+    #     added_spm.pieces.append(new_p)
+    # old_spm = added_spm
 
     # saving the result to disk
     with open(f'spm_{new_tokenizer_name}.model', 'wb') as f:
